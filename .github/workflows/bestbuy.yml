@@ -10,29 +10,51 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Test notification
+        run: |
+          echo "Sending test notification..."
+
+          curl -fsS --max-time 20 \
+            -H "Title: Pokémon Monitor Test" \
+            -H "Priority: high" \
+            -H "Tags: pokemon,white_check_mark" \
+            -d "GitHub Actions is working! Your Pokémon stock monitor is connected." \
+            "https://ntfy.sh/joshpokemon6685563"
+
+          echo "Test notification sent successfully!"
+
       - name: Check Best Buy SKUs
         env:
           SKUS: "6685563 6685559 6685573 6685562 6685565 6683819 6681540 6685568 6685560 6685567 6689677 6685570 6689674 6689678 6689673 6689672"
+
         run: |
           for SKU in $SKUS; do
 
+            echo "----------------------------------------"
             echo "Checking Best Buy SKU: $SKU"
 
             URL="https://www.bestbuy.com/site/sku/$SKU.p"
 
-            RESPONSE=$(curl --http1.1 -L -sS --connect-timeout 10 --max-time 60 \
+            RESPONSE=$(curl --http1.1 -L -sS \
+              --connect-timeout 10 \
+              --max-time 60 \
               -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" \
-              "$URL")
+              "$URL" 2>/dev/null) || {
+
+                echo "WARNING: Could not retrieve SKU $SKU"
+                echo "Skipping this SKU..."
+                continue
+            }
 
             if echo "$RESPONSE" | grep -qiE "Add to Cart|Add to Basket|Shipping available|Pickup available"; then
 
-              echo "SKU $SKU appears IN STOCK"
+              echo "🚨 SKU $SKU APPEARS IN STOCK!"
 
-              curl -s \
-                -H "Title: 🚨 Pokémon Restock Alert!" \
+              curl -fsS --max-time 20 \
+                -H "Title: Pokémon Restock Alert!" \
                 -H "Priority: urgent" \
                 -H "Tags: rotating_light,pokemon" \
-                -d "BEST BUY RESTOCK! SKU $SKU is IN STOCK! https://www.bestbuy.com/site/sku/$SKU.p" \
+                -d "BEST BUY RESTOCK! SKU $SKU appears to be IN STOCK! https://www.bestbuy.com/site/sku/$SKU.p" \
                 "https://ntfy.sh/joshpokemon6685563"
 
             else
@@ -42,4 +64,6 @@ jobs:
             fi
 
           done
-          
+
+          echo "----------------------------------------"
+          echo "Best Buy scan finished."
