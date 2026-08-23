@@ -1,0 +1,44 @@
+name: Best Buy Pokémon Stock Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  check-stock:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Best Buy SKUs
+        env:
+          SKUS: "6685563 6685559 6685573 6685562 6685565 6683819 6681540 6685568 6685560 6685567 6689677 6685570 6689674 6689678 6689673 6689672"
+        run: |
+          for SKU in $SKUS; do
+
+            echo "Checking Best Buy SKU: $SKU"
+
+            URL="https://www.bestbuy.com/site/sku/$SKU.p"
+
+            RESPONSE=$(curl -L -s \
+              -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" \
+              "$URL")
+
+            if echo "$RESPONSE" | grep -qiE "Add to Cart|Add to Basket|Shipping available|Pickup available"; then
+
+              echo "SKU $SKU appears IN STOCK"
+
+              curl -s \
+                -H "Title: 🚨 Pokémon Restock Alert!" \
+                -H "Priority: urgent" \
+                -H "Tags: rotating_light,pokemon" \
+                -d "BEST BUY RESTOCK! SKU $SKU is IN STOCK! https://www.bestbuy.com/site/sku/$SKU.p" \
+                "https://ntfy.sh/joshpokemon6685563"
+
+            else
+
+              echo "SKU $SKU does not appear to be in stock"
+
+            fi
+
+          done
