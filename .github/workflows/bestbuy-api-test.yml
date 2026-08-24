@@ -1,4 +1,4 @@
-name: Best Buy Fulfillment Test
+name: Best Buy Browser Test
 
 on:
   workflow_dispatch:
@@ -8,68 +8,100 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Test Best Buy fulfillment endpoint
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
         run: |
-          SKU="6685563"
-ZIP="12601"
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
 
-URL="https://www.bestbuy.com/fulfillment/buy/v1/fulfillment?skus=${SKU}&zip=${ZIP}&storeId=0"
+      - name: Test Best Buy product page
+        env:
+          SKU: "6685563"
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
 
-echo "========================================"
-echo "BEST BUY FULFILLMENT TEST"
-echo "========================================"
-echo "SKU: $SKU"
-echo "ZIP: $ZIP"
-echo "URL: $URL"
-echo ""
+          (async () => {
+            const sku = process.env.SKU;
+            const url = `https://www.bestbuy.com/site/searchpage.jsp?st=${sku}`;
 
-HTTP_CODE=$(curl --http1.1 \
-  -L \
-  -sS \
-  -o /tmp/response.txt \
-  -w "%{http_code}" \
-  --connect-timeout 15 \
-  --max-time 45 \
-  -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1" \
-  -H "Accept: application/json,text/plain,*/*" \
-  -H "Accept-Language: en-US,en;q=0.9" \
-  "$URL" 2>/tmp/curl_error.txt || true)
+            console.log('========================================');
+            console.log('BEST BUY BROWSER TEST');
+            console.log('========================================');
+            console.log(`SKU: ${sku}`);
+            console.log(`URL: ${url}`);
+            console.log('');
 
-RESPONSE=$(cat /tmp/response.txt 2>/dev/null || true)
-CURL_ERROR=$(cat /tmp/curl_error.txt 2>/dev/null || true)
+            const browser = await chromium.launch({
+              headless: true
+            });
 
-echo "----------- HTTP STATUS ---------------"
-echo "$HTTP_CODE"
+            const page = await browser.newPage({
+              viewport: {
+                width: 1280,
+                height: 900
+              },
+              userAgent:
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            });
 
-echo ""
-echo "----------- CURL ERROR ----------------"
-if [ -n "$CURL_ERROR" ]; then
-  echo "$CURL_ERROR"
-else
-  echo "None"
-fi
+            try {
+              const response = await page.goto(url, {
+                waitUntil: 'domcontentloaded',
+                timeout: 60000
+              });
 
-echo ""
-echo "----------- RESPONSE BODY -------------"
-if [ -n "$RESPONSE" ]; then
-  echo "$RESPONSE" | head -c 10000
-else
-  echo "(EMPTY RESPONSE)"
-fi
+              console.log(
+                `HTTP status: ${response ? response.status() : 'unknown'}`
+              );
 
-echo ""
-echo "----------------------------------------"
-echo "Response length: ${#RESPONSE}"
-echo "----------------------------------------"
+              await page.waitForTimeout(5000);
 
-if [ "$HTTP_CODE" = "000" ]; then
-  echo "🟠 REQUEST FAILED OR TIMED OUT"
-elif echo "$RESPONSE" | grep -qiE "inStoreAvailability|pickupAvailability|shippingAvailability|ispuEligible"; then
-  echo "🟢 SUCCESS: Best Buy fulfillment data detected!"
-elif [ "$HTTP_CODE" = "403" ] || echo "$RESPONSE" | grep -qiE "Access Denied|Akamai|Bot Manager"; then
-  echo "🔴 BEST BUY BLOCKED THE REQUEST"
-elif [ "$HTTP_CODE" = "200" ]; then
-  echo "🟡 Best Buy returned HTTP 200, but no known fulfillment fields were detected."
-else
-  echo "🟠 Best Buy returned HTTP $HTTP_CODE"
-fi
+              const title = await page.title();
+
+              const body = await page
+                .locator('body')
+                .innerText()
+                .catch(() => '');
+
+              console.log(`Page title: ${title}`);
+              console.log(`Body length: ${body.length}`);
+              console.log('');
+
+              console.log('----------- PAGE TEXT SAMPLE -----------');
+              console.log(body.slice(0, 12000));
+              console.log('----------------------------------------');
+
+              if (/access denied|captcha|robot|bot manager/i.test(body)) {
+                console.log(
+                  '🔴 BEST BUY/BOT PROTECTION BLOCKED THE BROWSER'
+                );
+              } else if (
+                /add to cart|shipping|pickup|available/i.test(body)
+              ) {
+                console.log(
+                  '🟢 PRODUCT/AVAILABILITY INFORMATION DETECTED'
+                );
+              } else {
+                console.log(
+                  '🟡 PAGE LOADED, BUT NO AVAILABILITY TEXT WAS DETECTED'
+                );
+              }
+            } catch (error) {
+              console.log(
+                `🔴 BROWSER TEST FAILED: ${error.message}`
+              );
+              process.exitCode = 1;
+            } finally {
+              await browser.close();
+            }
+          })();
+          NODE
