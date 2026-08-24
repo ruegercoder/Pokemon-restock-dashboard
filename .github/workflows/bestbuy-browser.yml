@@ -1,0 +1,138 @@
+name: Best Buy Pokémon Browser Stock Monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+jobs:
+  check-stock:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: Check Best Buy SKUs
+        env:
+          SKUS: "6685563 6685559 6685573 6685562 6685565 6683819 6681540 6685568 6685560 6685567 6689677 6685570 6689674 6689678 6689673 6689672"
+        run: |
+          cat > check-bestbuy.js <<'EOF'
+          const { chromium } = require('playwright');
+
+          const skus = process.env.SKUS.split(/\s+/);
+
+          (async () => {
+            const browser = await chromium.launch({
+              headless: true
+            });
+
+            const context = await browser.newContext({
+              userAgent:
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+              viewport: {
+                width: 390,
+                height: 844
+              }
+            });
+
+            const page = await context.newPage();
+
+            for (const sku of skus) {
+              const url = `https://www.bestbuy.com/site/sku/${sku}.p`;
+
+              console.log('');
+              console.log('========================================');
+              console.log(`Checking Best Buy SKU: ${sku}`);
+              console.log(url);
+
+              try {
+                const response = await page.goto(url, {
+                  waitUntil: 'domcontentloaded',
+                  timeout: 60000
+                });
+
+                console.log(`HTTP status: ${response ? response.status() : 'unknown'}`);
+
+                await page.waitForTimeout(5000);
+
+                const title = await page.title();
+
+                console.log(`Page title: ${title}`);
+
+                const bodyText = await page.locator('body').innerText();
+
+                console.log(`Page text length: ${bodyText.length}`);
+
+                const stockWords = [
+                  'Add to Cart',
+                  'Shipping available',
+                  'Pickup available',
+                  'Available today',
+                  'Available tomorrow'
+                ];
+
+                let possibleStock = false;
+
+                for (const word of stockWords) {
+                  if (bodyText.toLowerCase().includes(word.toLowerCase())) {
+                    console.log(`FOUND STOCK INDICATOR: ${word}`);
+                    possibleStock = true;
+                  }
+                }
+
+                if (possibleStock) {
+                  console.log(`🚨 POSSIBLE IN-STOCK ITEM: ${sku}`);
+
+                  const message =
+                    `BEST BUY RESTOCK POSSIBLE! SKU ${sku} appears to be available. ${url}`;
+
+                  const ntfyResponse = await fetch(
+                    'https://ntfy.sh/joshpokemon6685563',
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Title': '🚨 Pokémon Restock Alert!',
+                        'Priority': 'urgent',
+                        'Tags': 'rotating_light,pokemon'
+                      },
+                      body: message
+                    }
+                  );
+
+                  console.log(
+                    `Notification status: ${ntfyResponse.status}`
+                  );
+                } else {
+                  console.log(`❌ No stock indicator found for ${sku}`);
+                }
+
+              } catch (error) {
+                console.log(`⚠️ Could not check SKU ${sku}`);
+                console.log(error.message);
+              }
+
+              await page.waitForTimeout(2000);
+            }
+
+            await browser.close();
+
+            console.log('');
+            console.log('========================================');
+            console.log('BEST BUY BROWSER SCAN COMPLETE');
+            console.log('========================================');
+          })();
+          EOF
+
+          node check-bestbuy.js
