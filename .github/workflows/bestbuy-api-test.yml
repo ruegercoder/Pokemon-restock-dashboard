@@ -1,0 +1,55 @@
+name: Best Buy Fulfillment Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test Best Buy fulfillment endpoint
+        run: |
+          SKU="6685563"
+          ZIP="12601"
+
+          URL="https://www.bestbuy.com/fulfillment/buy/v1/fulfillment?skus=${SKU}&zip=${ZIP}&storeId=0"
+
+          echo "========================================"
+          echo "BEST BUY FULFILLMENT TEST"
+          echo "========================================"
+          echo "SKU: $SKU"
+          echo "ZIP: $ZIP"
+          echo "URL: $URL"
+          echo ""
+
+          RESPONSE=$(curl --http1.1 \
+            -L \
+            -sS \
+            -D /tmp/headers.txt \
+            --connect-timeout 15 \
+            --max-time 45 \
+            -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1" \
+            -H "Accept: application/json,text/plain,*/*" \
+            -H "Accept-Language: en-US,en;q=0.9" \
+            "$URL" 2>/dev/null) || true
+
+          echo "----------- RESPONSE HEADERS -----------"
+          cat /tmp/headers.txt
+
+          echo ""
+          echo "----------- RESPONSE BODY -------------"
+          echo "$RESPONSE" | head -c 10000
+
+          echo ""
+          echo "----------------------------------------"
+          echo "Response length: ${#RESPONSE}"
+          echo "----------------------------------------"
+
+          if echo "$RESPONSE" | grep -qiE "inStoreAvailability|pickupAvailability|shippingAvailability|ispuEligible"; then
+            echo "🟢 SUCCESS: Best Buy fulfillment data detected!"
+          elif echo "$RESPONSE" | grep -qiE "Access Denied|Akamai|Bot Manager|403"; then
+            echo "🔴 BEST BUY BLOCKED THE REQUEST"
+          else
+            echo "🟡 Endpoint responded, but no fulfillment fields were detected."
+          fi
