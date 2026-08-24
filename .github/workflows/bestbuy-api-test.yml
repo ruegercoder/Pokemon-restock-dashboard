@@ -11,45 +11,65 @@ jobs:
       - name: Test Best Buy fulfillment endpoint
         run: |
           SKU="6685563"
-          ZIP="12601"
+ZIP="12601"
 
-          URL="https://www.bestbuy.com/fulfillment/buy/v1/fulfillment?skus=${SKU}&zip=${ZIP}&storeId=0"
+URL="https://www.bestbuy.com/fulfillment/buy/v1/fulfillment?skus=${SKU}&zip=${ZIP}&storeId=0"
 
-          echo "========================================"
-          echo "BEST BUY FULFILLMENT TEST"
-          echo "========================================"
-          echo "SKU: $SKU"
-          echo "ZIP: $ZIP"
-          echo "URL: $URL"
-          echo ""
+echo "========================================"
+echo "BEST BUY FULFILLMENT TEST"
+echo "========================================"
+echo "SKU: $SKU"
+echo "ZIP: $ZIP"
+echo "URL: $URL"
+echo ""
 
-          RESPONSE=$(curl --http1.1 \
-            -L \
-            -sS \
-            -D /tmp/headers.txt \
-            --connect-timeout 15 \
-            --max-time 45 \
-            -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1" \
-            -H "Accept: application/json,text/plain,*/*" \
-            -H "Accept-Language: en-US,en;q=0.9" \
-            "$URL" 2>/dev/null) || true
+HTTP_CODE=$(curl --http1.1 \
+  -L \
+  -sS \
+  -o /tmp/response.txt \
+  -w "%{http_code}" \
+  --connect-timeout 15 \
+  --max-time 45 \
+  -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1" \
+  -H "Accept: application/json,text/plain,*/*" \
+  -H "Accept-Language: en-US,en;q=0.9" \
+  "$URL" 2>/tmp/curl_error.txt || true)
 
-          echo "----------- RESPONSE HEADERS -----------"
-          cat /tmp/headers.txt
+RESPONSE=$(cat /tmp/response.txt 2>/dev/null || true)
+CURL_ERROR=$(cat /tmp/curl_error.txt 2>/dev/null || true)
 
-          echo ""
-          echo "----------- RESPONSE BODY -------------"
-          echo "$RESPONSE" | head -c 10000
+echo "----------- HTTP STATUS ---------------"
+echo "$HTTP_CODE"
 
-          echo ""
-          echo "----------------------------------------"
-          echo "Response length: ${#RESPONSE}"
-          echo "----------------------------------------"
+echo ""
+echo "----------- CURL ERROR ----------------"
+if [ -n "$CURL_ERROR" ]; then
+  echo "$CURL_ERROR"
+else
+  echo "None"
+fi
 
-          if echo "$RESPONSE" | grep -qiE "inStoreAvailability|pickupAvailability|shippingAvailability|ispuEligible"; then
-            echo "🟢 SUCCESS: Best Buy fulfillment data detected!"
-          elif echo "$RESPONSE" | grep -qiE "Access Denied|Akamai|Bot Manager|403"; then
-            echo "🔴 BEST BUY BLOCKED THE REQUEST"
-          else
-            echo "🟡 Endpoint responded, but no fulfillment fields were detected."
-          fi
+echo ""
+echo "----------- RESPONSE BODY -------------"
+if [ -n "$RESPONSE" ]; then
+  echo "$RESPONSE" | head -c 10000
+else
+  echo "(EMPTY RESPONSE)"
+fi
+
+echo ""
+echo "----------------------------------------"
+echo "Response length: ${#RESPONSE}"
+echo "----------------------------------------"
+
+if [ "$HTTP_CODE" = "000" ]; then
+  echo "🟠 REQUEST FAILED OR TIMED OUT"
+elif echo "$RESPONSE" | grep -qiE "inStoreAvailability|pickupAvailability|shippingAvailability|ispuEligible"; then
+  echo "🟢 SUCCESS: Best Buy fulfillment data detected!"
+elif [ "$HTTP_CODE" = "403" ] || echo "$RESPONSE" | grep -qiE "Access Denied|Akamai|Bot Manager"; then
+  echo "🔴 BEST BUY BLOCKED THE REQUEST"
+elif [ "$HTTP_CODE" = "200" ]; then
+  echo "🟡 Best Buy returned HTTP 200, but no known fulfillment fields were detected."
+else
+  echo "🟠 Best Buy returned HTTP $HTTP_CODE"
+fi
