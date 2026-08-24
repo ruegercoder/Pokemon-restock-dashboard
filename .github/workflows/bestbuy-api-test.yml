@@ -22,7 +22,7 @@ jobs:
           npm install playwright
           npx playwright install --with-deps chromium
 
-      - name: Test Best Buy product page
+          - name: Test Best Buy stock status
         env:
           SKU: "6685563"
         run: |
@@ -34,7 +34,7 @@ jobs:
             const url = `https://www.bestbuy.com/site/searchpage.jsp?st=${sku}`;
 
             console.log('========================================');
-            console.log('BEST BUY BROWSER TEST');
+            console.log('BEST BUY STOCK CHECK');
             console.log('========================================');
             console.log(`SKU: ${sku}`);
             console.log(`URL: ${url}`);
@@ -76,30 +76,65 @@ jobs:
               console.log(`Body length: ${body.length}`);
               console.log('');
 
-              console.log('----------- PAGE TEXT SAMPLE -----------');
-              console.log(body.slice(0, 12000));
-              console.log('----------------------------------------');
+              const text = body.toLowerCase();
 
-              if (/access denied|captcha|robot|bot manager/i.test(body)) {
-                console.log(
-                  '🔴 BEST BUY/BOT PROTECTION BLOCKED THE BROWSER'
-                );
+              console.log('----------- STOCK SIGNALS ------------');
+
+              if (/access denied|captcha|robot|bot manager/.test(text)) {
+                console.log('🔴 BLOCKED: Best Buy bot protection detected');
+                process.exitCode = 1;
+
               } else if (
-                /add to cart|shipping|pickup|available/i.test(body)
+                text.includes('shipping not available') &&
+                text.includes('pickup not available') &&
+                text.includes('coming soon')
               ) {
-                console.log(
-                  '🟢 PRODUCT/AVAILABILITY INFORMATION DETECTED'
-                );
+                console.log('🟡 COMING SOON');
+                console.log('Shipping: NOT AVAILABLE');
+                console.log('Pickup: NOT AVAILABLE');
+
+              } else if (
+                text.includes('add to cart') ||
+                text.includes('available to ship') ||
+                text.includes('ready for pickup')
+              ) {
+                console.log('🟢 POSSIBLE IN STOCK');
+                console.log('Availability language detected.');
+
+              } else if (
+                text.includes('sold out') ||
+                text.includes('out of stock') ||
+                text.includes('currently unavailable') ||
+                text.includes('shipping unavailable') ||
+                text.includes('pickup unavailable')
+              ) {
+                console.log('🔴 OUT OF STOCK / UNAVAILABLE');
+
               } else {
-                console.log(
-                  '🟡 PAGE LOADED, BUT NO AVAILABILITY TEXT WAS DETECTED'
-                );
+                console.log('⚪ UNKNOWN');
+                console.log('No recognized stock status found.');
               }
+
+              console.log('');
+              console.log('----------- RELEVANT TEXT ------------');
+
+              const lines = body
+                .split('\n')
+                .map(x => x.trim())
+                .filter(x =>
+                  /shipping|pickup|available|cart|stock|coming soon|sold out|unavailable|account required/i.test(x)
+                );
+
+              console.log(lines.join('\n'));
+
+              console.log('--------------------------------------');
+
             } catch (error) {
               console.log(
-                `🔴 BROWSER TEST FAILED: ${error.message}`
+                `🔴 TEST FAILED: ${error.message}`
               );
               process.exitCode = 1;
+
             } finally {
               await browser.close();
             }
