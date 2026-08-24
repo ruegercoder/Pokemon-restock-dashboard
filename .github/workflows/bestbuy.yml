@@ -28,42 +28,69 @@ jobs:
           SKUS: "6685563 6685559 6685573 6685562 6685565 6683819 6681540 6685568 6685560 6685567 6689677 6685570 6689674 6689678 6689673 6689672"
 
         run: |
+          set -u
+
+          echo "========================================"
+          echo "BEST BUY POKÉMON STOCK SCAN"
+          echo "========================================"
+
           for SKU in $SKUS; do
 
+            echo ""
             echo "----------------------------------------"
-            echo "Checking Best Buy SKU: $SKU"
+            echo "Checking SKU: $SKU"
 
             URL="https://www.bestbuy.com/site/sku/$SKU.p"
 
-            RESPONSE=$(curl --http1.1 -L -sS \
+            RESPONSE=$(curl --http1.1 \
+              -L \
+              -sS \
               --connect-timeout 10 \
-              --max-time 60 \
-              -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" \
+              --max-time 45 \
+              -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1" \
+              -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+              -H "Accept-Language: en-US,en;q=0.9" \
               "$URL" 2>/dev/null) || {
 
-                echo "WARNING: Could not retrieve SKU $SKU"
-                echo "Skipping this SKU..."
+                echo "⚠️ Could not retrieve SKU $SKU"
                 continue
             }
 
-            if echo "$RESPONSE" | grep -qiE "Add to Cart|Add to Basket|Shipping available|Pickup available"; then
+            LENGTH=${#RESPONSE}
 
-              echo "🚨 SKU $SKU APPEARS IN STOCK!"
+            echo "Response received: $LENGTH characters"
+
+            if [ "$LENGTH" -lt 1000 ]; then
+              echo "⚠️ Response is unusually small."
+              echo "Best Buy may have blocked the request."
+              continue
+            fi
+
+            echo "Searching response for stock indicators..."
+
+            if echo "$RESPONSE" | grep -qiE \
+              '"shippingAvailability"|"pickupAvailability"|"available":true|"inStock":true|"Add to Cart"|"Shipping available"|"Pickup available"'; then
+
+              echo "🚨 POSSIBLE IN-STOCK ITEM!"
+              echo "SKU: $SKU"
+              echo "URL: $URL"
 
               curl -fsS --max-time 20 \
-                -H "Title: Pokémon Restock Alert!" \
+                -H "Title: 🚨 Pokémon Restock Alert!" \
                 -H "Priority: urgent" \
                 -H "Tags: rotating_light,pokemon" \
-                -d "BEST BUY RESTOCK! SKU $SKU appears to be IN STOCK! https://www.bestbuy.com/site/sku/$SKU.p" \
+                -d "BEST BUY RESTOCK POSSIBLE! SKU $SKU appears to be available. $URL" \
                 "https://ntfy.sh/joshpokemon6685563"
 
             else
 
-              echo "SKU $SKU does not appear to be in stock"
+              echo "❌ No obvious stock indicator found."
 
             fi
 
           done
 
-          echo "----------------------------------------"
-          echo "Best Buy scan finished."
+          echo ""
+          echo "========================================"
+          echo "BEST BUY SCAN FINISHED"
+          echo "========================================"
