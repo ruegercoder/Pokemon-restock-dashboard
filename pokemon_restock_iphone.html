@@ -77,6 +77,11 @@ function render(){
        <div class="meta">Last checked: ${esc(p.lastCheck||"Never")}</div>
        <div class="actions">
        <button class="open" onclick="openProduct(${p.i})">OPEN & BUY</button>
+      ${p.store === "Target" ? `
+<button class="open" onclick="openTargetAutoCart(${p.i})">
+TARGET AUTO CART
+</button>
+` : ""}
        <button class="secondary" onclick="markChecked(${p.i})">Mark Checked</button>
        <button class="delete" onclick="removeProduct(${p.i})">Delete</button></div>`;
      sec.appendChild(c);
@@ -105,3 +110,15 @@ render();
 </script>
 </body>
 </html>
+function openTargetAutoCart(i){
+    if(products[i].store !== "Target"){
+        alert("This button is only for Target products.");
+        return;
+    }
+
+    products[i].lastCheck = new Date().toLocaleString();
+    save();
+    render();
+
+    window.open(products[i].url, "_blank");
+}
