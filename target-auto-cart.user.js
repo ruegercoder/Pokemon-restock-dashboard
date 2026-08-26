@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Pokémon Target Auto Cart
 // @namespace    pokemon-restock-dashboard
-// @version      2.0.0
-// @description  Monitor a Target Pokémon product and click Add to Cart when available.
+// @version      2.1.0
+// @description  Monitor Target Pokémon products and click Add to Cart when available.
 // @match        https://www.target.com/p/*
 // @grant        none
 // ==/UserScript==
@@ -11,13 +11,9 @@
     "use strict";
 
     let addedToCart = false;
-    let lastStatus = "";
 
-    function createStatusBox() {
-
-        if (document.getElementById("pokemon-target-status")) {
-            return;
-        }
+    function createStatus() {
+        if (document.getElementById("pokemon-target-status")) return;
 
         const box = document.createElement("div");
 
@@ -32,53 +28,52 @@
         box.style.color = "#fff";
         box.style.padding = "12px 18px";
         box.style.borderRadius = "14px";
-        box.style.fontFamily = "Arial, sans-serif";
+        box.style.fontFamily = "Arial,sans-serif";
         box.style.fontSize = "15px";
         box.style.fontWeight = "700";
         box.style.boxShadow = "0 4px 20px rgba(0,0,0,.35)";
         box.style.textAlign = "center";
 
-        box.textContent = "🟡 Pokémon Monitor Starting...";
-
         document.body.appendChild(box);
     }
 
+    function status(text) {
+        createStatus();
 
-    function setStatus(message) {
-
-        createStatusBox();
-
-        const box =
-            document.getElementById(
-                "pokemon-target-status"
-            );
-
-        if (!box) return;
-
-        box.textContent = message;
-
-        lastStatus = message;
+        document.getElementById(
+            "pokemon-target-status"
+        ).textContent = text;
 
         console.log(
             "[Pokémon Target Monitor]",
-            message
+            text
         );
     }
 
+    function pageText() {
+        return (
+            document.body.innerText ||
+            document.body.textContent ||
+            ""
+        ).replace(/\s+/g, " ")
+         .toLowerCase();
+    }
 
-    function findAddToCartButton() {
-
-        const buttons =
+    function findAddToCart() {
+        const elements =
             Array.from(
-                document.querySelectorAll("button")
+                document.querySelectorAll(
+                    "button, [role='button'], a"
+                )
             );
 
-        return buttons.find(button => {
+        return elements.find(el => {
 
             const text =
                 (
-                    button.innerText ||
-                    button.textContent ||
+                    el.innerText ||
+                    el.textContent ||
+                    el.getAttribute("aria-label") ||
                     ""
                 )
                 .trim()
@@ -86,51 +81,43 @@
 
             return (
                 text.includes("add to cart") &&
-                !button.disabled &&
-                button.offsetParent !== null
+                !el.disabled &&
+                el.offsetParent !== null
             );
-
         });
-
     }
 
+    function checkStock() {
 
-    function checkTarget() {
+        if (addedToCart) return;
 
-        if (addedToCart) {
-            return;
-        }
+        const text = pageText();
 
-        createStatusBox();
+        /*
+         * Check for Add to Cart FIRST.
+         */
+        const addButton = findAddToCart();
 
-        const button =
-            findAddToCartButton();
+        if (addButton) {
 
-
-        if (button) {
-
-            setStatus(
+            status(
                 "🟢 IN STOCK — ADD TO CART FOUND"
             );
 
             setTimeout(() => {
 
-                if (addedToCart) {
-                    return;
-                }
+                if (addedToCart) return;
 
-                const currentButton =
-                    findAddToCartButton();
+                const button =
+                    findAddToCart();
 
-                if (!currentButton) {
-                    return;
-                }
+                if (!button) return;
 
-                currentButton.click();
+                button.click();
 
                 addedToCart = true;
 
-                setStatus(
+                status(
                     "🛒 ADDED TO CART — CHECKOUT MANUALLY"
                 );
 
@@ -140,18 +127,31 @@
         }
 
 
-        const pageText =
-            document.body.innerText
-                .toLowerCase();
+        /*
+         * Target can use several different
+         * unavailable messages.
+         */
+        const unavailableTerms = [
+            "out of stock",
+            "sold out",
+            "currently unavailable",
+            "not available",
+            "unavailable",
+            "this item is not available",
+            "shipping unavailable",
+            "pickup unavailable"
+        ];
 
 
-        if (
-            pageText.includes("out of stock") ||
-            pageText.includes("sold out") ||
-            pageText.includes("unavailable")
-        ) {
+        const unavailable =
+            unavailableTerms.some(term =>
+                text.includes(term)
+            );
 
-            setStatus(
+
+        if (unavailable) {
+
+            status(
                 "🔴 OUT OF STOCK"
             );
 
@@ -159,12 +159,16 @@
         }
 
 
+        /*
+         * Detect Target verification pages.
+         */
         if (
-            pageText.includes("captcha") ||
-            pageText.includes("verify you are human")
+            text.includes("captcha") ||
+            text.includes("verify you are human") ||
+            text.includes("robot or human")
         ) {
 
-            setStatus(
+            status(
                 "⚠️ TARGET VERIFICATION REQUIRED"
             );
 
@@ -172,46 +176,46 @@
         }
 
 
-        setStatus(
+        status(
             "🟡 CHECKING TARGET..."
         );
-
     }
 
 
-    function startMonitor() {
+    function start() {
 
-        createStatusBox();
+        createStatus();
 
-        setStatus(
+        status(
             "🟡 Pokémon Monitor Active"
         );
 
-        checkTarget();
+        setTimeout(
+            checkStock,
+            1000
+        );
 
 
         const observer =
             new MutationObserver(() => {
-
-                checkTarget();
-
+                checkStock();
             });
 
 
         observer.observe(
-            document.body,
+            document.documentElement,
             {
-                childList: true,
-                subtree: true
+                childList:true,
+                subtree:true,
+                characterData:true
             }
         );
 
 
         setInterval(
-            checkTarget,
+            checkStock,
             2000
         );
-
     }
 
 
@@ -222,12 +226,12 @@
 
         document.addEventListener(
             "DOMContentLoaded",
-            startMonitor
+            start
         );
 
     } else {
 
-        startMonitor();
+        start();
 
     }
 
