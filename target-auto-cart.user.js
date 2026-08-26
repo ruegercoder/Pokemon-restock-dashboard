@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Pokémon Target Auto Add to Cart
+// @name         Pokémon Target Auto Cart
 // @namespace    pokemon-restock-dashboard
-// @version      1.0.0
-// @description  Automatically clicks Target's Add to Cart button when available.
+// @version      2.0.0
+// @description  Monitor a Target Pokémon product and click Add to Cart when available.
 // @match        https://www.target.com/p/*
 // @grant        none
 // ==/UserScript==
@@ -10,20 +10,77 @@
 (function () {
     "use strict";
 
-    const PRODUCT_URL_PART =
-        "/p/pok-233-mon-trading-card-game-30th-celebration-elite-trainer-box/";
-
     let addedToCart = false;
+    let lastStatus = "";
 
-    function isTargetProduct() {
-        return window.location.pathname.includes(PRODUCT_URL_PART);
+    function createStatusBox() {
+
+        if (document.getElementById("pokemon-target-status")) {
+            return;
+        }
+
+        const box = document.createElement("div");
+
+        box.id = "pokemon-target-status";
+
+        box.style.position = "fixed";
+        box.style.top = "15px";
+        box.style.left = "50%";
+        box.style.transform = "translateX(-50%)";
+        box.style.zIndex = "999999";
+        box.style.background = "#111";
+        box.style.color = "#fff";
+        box.style.padding = "12px 18px";
+        box.style.borderRadius = "14px";
+        box.style.fontFamily = "Arial, sans-serif";
+        box.style.fontSize = "15px";
+        box.style.fontWeight = "700";
+        box.style.boxShadow = "0 4px 20px rgba(0,0,0,.35)";
+        box.style.textAlign = "center";
+
+        box.textContent = "🟡 Pokémon Monitor Starting...";
+
+        document.body.appendChild(box);
     }
 
+
+    function setStatus(message) {
+
+        createStatusBox();
+
+        const box =
+            document.getElementById(
+                "pokemon-target-status"
+            );
+
+        if (!box) return;
+
+        box.textContent = message;
+
+        lastStatus = message;
+
+        console.log(
+            "[Pokémon Target Monitor]",
+            message
+        );
+    }
+
+
     function findAddToCartButton() {
-        const buttons = Array.from(document.querySelectorAll("button"));
+
+        const buttons =
+            Array.from(
+                document.querySelectorAll("button")
+            );
 
         return buttons.find(button => {
-            const text = (button.innerText || button.textContent || "")
+
+            const text =
+                (
+                    button.innerText ||
+                    button.textContent ||
+                    ""
+                )
                 .trim()
                 .toLowerCase();
 
@@ -32,81 +89,146 @@
                 !button.disabled &&
                 button.offsetParent !== null
             );
+
         });
+
     }
 
-    function tryAddToCart() {
-        if (addedToCart || !isTargetProduct()) {
+
+    function checkTarget() {
+
+        if (addedToCart) {
             return;
         }
 
-        const button = findAddToCartButton();
+        createStatusBox();
 
-        if (!button) {
+        const button =
+            findAddToCartButton();
+
+
+        if (button) {
+
+            setStatus(
+                "🟢 IN STOCK — ADD TO CART FOUND"
+            );
+
+            setTimeout(() => {
+
+                if (addedToCart) {
+                    return;
+                }
+
+                const currentButton =
+                    findAddToCartButton();
+
+                if (!currentButton) {
+                    return;
+                }
+
+                currentButton.click();
+
+                addedToCart = true;
+
+                setStatus(
+                    "🛒 ADDED TO CART — CHECKOUT MANUALLY"
+                );
+
+            }, 500);
+
             return;
         }
 
-        console.log("[Pokémon Target Monitor] Add to Cart found.");
 
-        button.click();
+        const pageText =
+            document.body.innerText
+                .toLowerCase();
 
-        addedToCart = true;
 
-        console.log(
-            "[Pokémon Target Monitor] Add to Cart clicked. Manual checkout required."
+        if (
+            pageText.includes("out of stock") ||
+            pageText.includes("sold out") ||
+            pageText.includes("unavailable")
+        ) {
+
+            setStatus(
+                "🔴 OUT OF STOCK"
+            );
+
+            return;
+        }
+
+
+        if (
+            pageText.includes("captcha") ||
+            pageText.includes("verify you are human")
+        ) {
+
+            setStatus(
+                "⚠️ TARGET VERIFICATION REQUIRED"
+            );
+
+            return;
+        }
+
+
+        setStatus(
+            "🟡 CHECKING TARGET..."
         );
 
-        showNotification();
     }
 
-    function showNotification() {
-        const notice = document.createElement("div");
-
-        notice.textContent =
-            "Pokémon found — Add to Cart clicked. Complete checkout manually.";
-
-        notice.style.position = "fixed";
-        notice.style.top = "20px";
-        notice.style.left = "50%";
-        notice.style.transform = "translateX(-50%)";
-        notice.style.zIndex = "999999";
-        notice.style.background = "#111";
-        notice.style.color = "#fff";
-        notice.style.padding = "14px 18px";
-        notice.style.borderRadius = "12px";
-        notice.style.fontSize = "15px";
-        notice.style.fontWeight = "600";
-        notice.style.boxShadow = "0 4px 20px rgba(0,0,0,.3)";
-
-        document.body.appendChild(notice);
-
-        setTimeout(() => {
-            notice.remove();
-        }, 8000);
-    }
 
     function startMonitor() {
-        console.log("[Pokémon Target Monitor] Running.");
 
-        tryAddToCart();
+        createStatusBox();
 
-        const observer = new MutationObserver(() => {
-            tryAddToCart();
-        });
+        setStatus(
+            "🟡 Pokémon Monitor Active"
+        );
 
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        checkTarget();
 
-        setInterval(() => {
-            tryAddToCart();
-        }, 2000);
+
+        const observer =
+            new MutationObserver(() => {
+
+                checkTarget();
+
+            });
+
+
+        observer.observe(
+            document.body,
+            {
+                childList: true,
+                subtree: true
+            }
+        );
+
+
+        setInterval(
+            checkTarget,
+            2000
+        );
+
     }
 
-    if (document.readyState === "loading") {
-        document.addEventListener("DOMContentLoaded", startMonitor);
+
+    if (
+        document.readyState ===
+        "loading"
+    ) {
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            startMonitor
+        );
+
     } else {
+
         startMonitor();
+
     }
+
 })();
