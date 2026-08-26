@@ -180,67 +180,6 @@ input,select{
   color:#665300;
   margin-top:12px
 }
-
-/* Target launcher */
-
-#targetLauncher{
-  display:none;
-  position:fixed;
-  inset:0;
-  z-index:50;
-  background:#f5f5f7;
-  padding:
-    calc(25px + env(safe-area-inset-top))
-    18px
-    calc(25px + env(safe-area-inset-bottom));
-  overflow:auto
-}
-
-.launcherBox{
-  max-width:600px;
-  margin:40px auto;
-  background:#fff;
-  border-radius:22px;
-  padding:22px;
-  box-shadow:0 2px 12px #00000015
-}
-
-.launcherBox h2{
-  margin-top:0;
-  font-size:22px
-}
-
-.launcherStep{
-  background:#f2f2f7;
-  border-radius:14px;
-  padding:14px;
-  margin:10px 0;
-  font-size:15px
-}
-
-.urlBox{
-  width:100%;
-  min-height:100px;
-  border:1px solid #ccc;
-  border-radius:12px;
-  padding:12px;
-  font-size:13px;
-  resize:none;
-  margin-top:10px
-}
-
-.launchButton{
-  width:100%;
-  margin-top:12px;
-  background:#007aff
-}
-
-.copyButton{
-  width:100%;
-  margin-top:8px;
-  background:#e8e8ed;
-  color:#111
-}
 </style>
 </head>
 
@@ -322,63 +261,10 @@ Save Product
 
 <div class="notice">
 Safe mode: this app opens the retailer page.
-You control Add to Cart and checkout.
+You control checkout.
 </div>
 
 </div>
-</div>
-
-
-<!-- TARGET LAUNCHER -->
-
-<div id="targetLauncher">
-
-<div class="launcherBox">
-
-<h2>🎯 Target Auto Cart</h2>
-
-<div class="launcherStep">
-<b>Step 1</b><br>
-Tap the button below to copy the Target product URL.
-</div>
-
-<textarea
-id="targetUrlBox"
-class="urlBox"
-readonly
-></textarea>
-
-<button
-class="copyButton"
-onclick="copyTargetUrl()"
->
-COPY TARGET URL
-</button>
-
-<div class="launcherStep">
-<b>Step 2</b><br>
-Stay in Safari. Paste the copied URL directly into Safari's address bar and tap <b>Go</b>.
-</div>
-
-<div class="launcherStep">
-<b>Step 3</b><br>
-On the Target page, tap <b>aA → Userscripts</b> and make sure <b>Pokémon Target Auto Cart</b> is enabled.
-</div>
-
-<div class="notice">
-The Target app may automatically open when a Target link is tapped. Pasting the URL directly into Safari keeps the process under your control.
-</div>
-
-<button
-class="secondary"
-onclick="closeTargetLauncher()"
-style="width:100%;margin-top:12px"
->
-BACK TO DASHBOARD
-</button>
-
-</div>
-
 </div>
 
 
@@ -660,12 +546,24 @@ function addProduct(){
 
 function openProduct(i){
 
+  if(!products[i]){
+
+    alert(
+      "Product could not be found."
+    );
+
+    return;
+
+  }
+
+
   products[i].lastCheck=
     new Date().toLocaleString();
 
   save();
 
   render();
+
 
   window.open(
     products[i].url,
@@ -678,9 +576,10 @@ function openProduct(i){
 /*
   TARGET AUTO CART
 
-  This does NOT directly open Target.
+  Opens the saved Target product directly.
 
-  It opens our Safari launcher page instead.
+  No copy/paste.
+  No launcher screen.
 */
 
 function openTargetAutoCart(i){
@@ -715,60 +614,18 @@ function openTargetAutoCart(i){
   render();
 
 
-  document.getElementById(
-    "targetUrlBox"
-  ).value=
-    products[i].url;
-
-
-  document.getElementById(
-    "targetLauncher"
-  ).style.display="block";
-
-}
-
-
-function copyTargetUrl(){
-
-  const box=
-    document.getElementById(
-      "targetUrlBox"
-    );
-
-
-  box.select();
-
-
-  navigator.clipboard
-    .writeText(box.value)
-    .then(()=>{
-
-      alert(
-        "Target URL copied. Paste it directly into Safari's address bar."
-      );
-
-    })
-    .catch(()=>{
-
-      alert(
-        "Select the URL and copy it manually."
-      );
-
-    });
-
-}
-
-
-function closeTargetLauncher(){
-
-  document.getElementById(
-    "targetLauncher"
-  ).style.display="none";
+  window.open(
+    products[i].url,
+    "_blank"
+  );
 
 }
 
 
 function markChecked(i){
+
+  if(!products[i]) return;
+
 
   products[i].lastCheck=
     new Date().toLocaleString();
@@ -781,6 +638,9 @@ function markChecked(i){
 
 
 function removeProduct(i){
+
+  if(!products[i]) return;
+
 
   if(
     confirm(
