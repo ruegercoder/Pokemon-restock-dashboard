@@ -106,10 +106,6 @@ function openAll(){
  if(!products.length){alert("Add products first.");return;}
  products.forEach((p,i)=>{p.lastCheck=new Date().toLocaleString();setTimeout(()=>window.open(p.url,"_blank"),i*250);});save();render();
 }
-render();
-</script>
-</body>
-</html>
 function openTargetAutoCart(i){
     if(products[i].store !== "Target"){
         alert("This button is only for Target products.");
@@ -122,3 +118,8 @@ function openTargetAutoCart(i){
 
     window.open(products[i].url, "_blank");
 }
+
+render();
+</script>
+</body>
+</html>
