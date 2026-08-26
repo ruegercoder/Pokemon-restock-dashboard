@@ -581,44 +581,25 @@ function openProduct(i){
   No copy/paste.
   No launcher screen.
 */
-
 function openTargetAutoCart(i){
 
   if(!products[i]){
-
-    alert(
-      "Product could not be found."
-    );
-
+    alert("Product could not be found.");
     return;
-
   }
 
-
-  if(products[i].store!=="Target"){
-
-    alert(
-      "This button is only for Target products."
-    );
-
+  if(products[i].store !== "Target"){
+    alert("This button is only for Target products.");
     return;
-
   }
 
-
-  products[i].lastCheck=
+  products[i].lastCheck =
     new Date().toLocaleString();
 
   save();
 
-  render();
-
-
-  window.open(
-    products[i].url,
-    "_blank"
-  );
-
+  // Open the saved Target product in Safari
+  window.location.href = products[i].url;
 }
 
 
