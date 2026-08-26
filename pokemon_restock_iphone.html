@@ -7,119 +7,658 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#f5f5f7">
+
 <title>Pokémon Restock Dashboard</title>
+
 <style>
-:root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;background:#f5f5f7;color:#111}
-*{box-sizing:border-box}body{margin:0;background:#f5f5f7}
-header{position:sticky;top:0;z-index:5;background:rgba(245,245,247,.94);backdrop-filter:blur(14px);padding:calc(14px + env(safe-area-inset-top)) 16px 12px;border-bottom:1px solid #ddd}
-h1{font-size:24px;margin:0 0 4px}.sub{font-size:13px;color:#666}
-.toolbar{display:flex;gap:8px;margin-top:12px}
-button{border:0;border-radius:12px;padding:11px 14px;font-size:15px;font-weight:600;background:#111;color:#fff}
-button.secondary{background:#e8e8ed;color:#111}
-main{max-width:850px;margin:auto;padding:12px 14px 40px}
-.store{margin:14px 0}.store h2{font-size:18px;margin:10px 2px}
-.card{background:#fff;border-radius:18px;padding:15px;margin:9px 0;box-shadow:0 1px 4px #00000012}
-.name{font-size:17px;font-weight:700;margin-bottom:6px}.meta{font-size:12px;color:#777;margin-bottom:12px}
-.actions{display:flex;gap:7px;flex-wrap:wrap}.actions button{flex:1;min-width:105px}
-.open{background:#007aff}.delete{background:#eee;color:#c00}
-.empty{text-align:center;color:#777;padding:60px 20px}
-.modal{display:none;position:fixed;inset:0;background:#0007;z-index:20;align-items:flex-end}
-.sheet{background:#fff;border-radius:22px 22px 0 0;padding:18px 16px calc(22px + env(safe-area-inset-bottom));width:100%;max-height:90vh}
-label{display:block;font-size:13px;font-weight:600;margin:12px 0 6px}
-input,select{width:100%;padding:13px;border:1px solid #ccc;border-radius:11px;font-size:16px;background:#fff}
-.row{display:flex;gap:8px;margin-top:15px}.row button{flex:1}
-.notice{background:#fff8df;border-radius:12px;padding:10px;font-size:12px;color:#665300;margin-top:12px}
+:root{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;
+  background:#f5f5f7;
+  color:#111
+}
+
+*{
+  box-sizing:border-box
+}
+
+body{
+  margin:0;
+  background:#f5f5f7
+}
+
+header{
+  position:sticky;
+  top:0;
+  z-index:5;
+  background:rgba(245,245,247,.94);
+  backdrop-filter:blur(14px);
+  padding:calc(14px + env(safe-area-inset-top)) 16px 12px;
+  border-bottom:1px solid #ddd
+}
+
+h1{
+  font-size:24px;
+  margin:0 0 4px
+}
+
+.sub{
+  font-size:13px;
+  color:#666
+}
+
+.toolbar{
+  display:flex;
+  gap:8px;
+  margin-top:12px
+}
+
+button{
+  border:0;
+  border-radius:12px;
+  padding:11px 14px;
+  font-size:15px;
+  font-weight:600;
+  background:#111;
+  color:#fff
+}
+
+button.secondary{
+  background:#e8e8ed;
+  color:#111
+}
+
+main{
+  max-width:850px;
+  margin:auto;
+  padding:12px 14px 40px
+}
+
+.store{
+  margin:14px 0
+}
+
+.store h2{
+  font-size:18px;
+  margin:10px 2px
+}
+
+.card{
+  background:#fff;
+  border-radius:18px;
+  padding:15px;
+  margin:9px 0;
+  box-shadow:0 1px 4px #00000012
+}
+
+.name{
+  font-size:17px;
+  font-weight:700;
+  margin-bottom:6px
+}
+
+.meta{
+  font-size:12px;
+  color:#777;
+  margin-bottom:12px
+}
+
+.actions{
+  display:flex;
+  gap:7px;
+  flex-wrap:wrap
+}
+
+.actions button{
+  flex:1;
+  min-width:105px
+}
+
+.open{
+  background:#007aff
+}
+
+.target{
+  background:#111
+}
+
+.delete{
+  background:#eee;
+  color:#c00
+}
+
+.empty{
+  text-align:center;
+  color:#777;
+  padding:60px 20px
+}
+
+.modal{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:#0007;
+  z-index:20;
+  align-items:flex-end
+}
+
+.sheet{
+  background:#fff;
+  border-radius:22px 22px 0 0;
+  padding:18px 16px calc(22px + env(safe-area-inset-bottom));
+  width:100%;
+  max-height:90vh
+}
+
+label{
+  display:block;
+  font-size:13px;
+  font-weight:600;
+  margin:12px 0 6px
+}
+
+input,select{
+  width:100%;
+  padding:13px;
+  border:1px solid #ccc;
+  border-radius:11px;
+  font-size:16px;
+  background:#fff
+}
+
+.row{
+  display:flex;
+  gap:8px;
+  margin-top:15px
+}
+
+.row button{
+  flex:1
+}
+
+.notice{
+  background:#fff8df;
+  border-radius:12px;
+  padding:10px;
+  font-size:12px;
+  color:#665300;
+  margin-top:12px
+}
 </style>
 </head>
+
 <body>
+
 <header>
+
 <h1>Pokémon Restock Dashboard</h1>
-<div class="sub" id="summary">0 products tracked</div>
-<div class="toolbar">
-<button onclick="showAdd()">＋ Add Product</button>
-<button class="secondary" onclick="openAll()">Open All</button>
+
+<div class="sub" id="summary">
+0 products tracked
 </div>
+
+<div class="toolbar">
+
+<button onclick="showAdd()">
+＋ Add Product
+</button>
+
+<button class="secondary" onclick="openAll()">
+Open All
+</button>
+
+</div>
+
 </header>
+
 <main id="dashboard"></main>
 
+
 <div class="modal" id="modal">
+
 <div class="sheet">
+
 <h2>Add Pokémon Product</h2>
-<label>Product name</label><input id="name" placeholder="Pokémon 151 Booster Bundle">
+
+<label>Product name</label>
+
+<input
+id="name"
+placeholder="Pokémon 151 Booster Bundle"
+>
+
 <label>Store</label>
+
 <select id="store">
-<option>Pokémon Center</option><option>Target</option><option>Walmart</option><option>Best Buy</option>
+
+<option>Pokémon Center</option>
+<option>Target</option>
+<option>Walmart</option>
+<option>Best Buy</option>
+
 </select>
-<label>Product page URL</label><input id="url" type="url" placeholder="https://...">
-<div class="row"><button class="secondary" onclick="hideAdd()">Cancel</button><button onclick="addProduct()">Save Product</button></div>
-<div class="notice">Safe mode: this app opens the retailer page. You control Add to Cart and checkout.</div>
-</div></div>
+
+<label>Product page URL</label>
+
+<input
+id="url"
+type="url"
+placeholder="https://..."
+>
+
+<div class="row">
+
+<button
+class="secondary"
+onclick="hideAdd()"
+>
+Cancel
+</button>
+
+<button onclick="addProduct()">
+Save Product
+</button>
+
+</div>
+
+<div class="notice">
+Safe mode: this app opens the retailer page.
+You control Add to Cart and checkout.
+</div>
+
+</div>
+</div>
+
 
 <script>
-const STORES=["Pokémon Center","Target","Walmart","Best Buy"];
-let products=JSON.parse(localStorage.getItem("pokemonProducts")||"[]");
 
-function save(){localStorage.setItem("pokemonProducts",JSON.stringify(products));}
-function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));}
+const STORES=[
+  "Pokémon Center",
+  "Target",
+  "Walmart",
+  "Best Buy"
+];
+
+let products=
+JSON.parse(
+  localStorage.getItem("pokemonProducts") || "[]"
+);
+
+
+function save(){
+
+  localStorage.setItem(
+    "pokemonProducts",
+    JSON.stringify(products)
+  );
+
+}
+
+
+function esc(s){
+
+  return String(s).replace(
+    /[&<>"']/g,
+    m => ({
+      "&":"&amp;",
+      "<":"&lt;",
+      ">":"&gt;",
+      '"':"&quot;",
+      "'":"&#039;"
+    }[m])
+  );
+
+}
+
+
 function render(){
- const d=document.getElementById("dashboard");
- document.getElementById("summary").textContent=products.length+" product"+(products.length===1?"":"s")+" tracked";
- if(!products.length){d.innerHTML='<div class="empty">No Pokémon products yet.<br><br>Tap <b>＋ Add Product</b> to get started.</div>';return;}
- d.innerHTML="";
- STORES.forEach(store=>{
-   const list=products.map((p,i)=>({...p,i})).filter(p=>p.store===store);
-   if(!list.length)return;
-   const sec=document.createElement("section");sec.className="store";
-   sec.innerHTML="<h2>"+store+" · "+list.length+"</h2>";
-   list.forEach(p=>{
-     const c=document.createElement("div");c.className="card";
-     c.innerHTML=`<div class="name">${esc(p.name)}</div>
-       <div class="meta">Last checked: ${esc(p.lastCheck||"Never")}</div>
-       <div class="actions">
-       <button class="open" onclick="openProduct(${p.i})">OPEN & BUY</button>
-      ${p.store === "Target" ? `
-<button class="open" onclick="openTargetAutoCart(${p.i})">
-TARGET AUTO CART
-</button>
-` : ""}
-       <button class="secondary" onclick="markChecked(${p.i})">Mark Checked</button>
-       <button class="delete" onclick="removeProduct(${p.i})">Delete</button></div>`;
-     sec.appendChild(c);
-   });d.appendChild(sec);
- });
-}
-function showAdd(){document.getElementById("modal").style.display="flex";document.getElementById("name").focus();}
-function hideAdd(){document.getElementById("modal").style.display="none";}
-function addProduct(){
- const name=document.getElementById("name").value.trim(),store=document.getElementById("store").value,url=document.getElementById("url").value.trim();
- if(!name||!url){alert("Enter a product name and product URL.");return;}
- try{new URL(url)}catch(e){alert("Please enter a valid URL.");return;}
- products.push({name,store,url,lastCheck:"Never"});save();hideAdd();
- document.getElementById("name").value="";document.getElementById("url").value="";render();
-}
-function openProduct(i){
- products[i].lastCheck=new Date().toLocaleString();save();render();window.open(products[i].url,"_blank");
-}
-function markChecked(i){products[i].lastCheck=new Date().toLocaleString();save();render();}
-function removeProduct(i){if(confirm("Remove "+products[i].name+"?")){products.splice(i,1);save();render();}}
-function openAll(){
- if(!products.length){alert("Add products first.");return;}
- products.forEach((p,i)=>{p.lastCheck=new Date().toLocaleString();setTimeout(()=>window.open(p.url,"_blank"),i*250);});save();render();
-}
-function openTargetAutoCart(i){
-    if(products[i].store !== "Target"){
-        alert("This button is only for Target products.");
-        return;
-    }
 
-    products[i].lastCheck = new Date().toLocaleString();
+  const d=document.getElementById("dashboard");
+
+  document.getElementById("summary").textContent =
+    products.length +
+    " product" +
+    (products.length===1 ? "" : "s") +
+    " tracked";
+
+
+  if(!products.length){
+
+    d.innerHTML =
+      '<div class="empty">' +
+      'No Pokémon products yet.<br><br>' +
+      'Tap <b>＋ Add Product</b> to get started.' +
+      '</div>';
+
+    return;
+
+  }
+
+
+  d.innerHTML="";
+
+
+  STORES.forEach(store=>{
+
+    const list=
+      products
+      .map((p,i)=>({...p,i}))
+      .filter(p=>p.store===store);
+
+
+    if(!list.length) return;
+
+
+    const sec=
+      document.createElement("section");
+
+    sec.className="store";
+
+
+    sec.innerHTML=
+      "<h2>" +
+      store +
+      " · " +
+      list.length +
+      "</h2>";
+
+
+    list.forEach(p=>{
+
+      const c=
+        document.createElement("div");
+
+      c.className="card";
+
+
+      let buttons = `
+        <button
+          class="open"
+          onclick="openProduct(${p.i})"
+        >
+          OPEN & BUY
+        </button>
+      `;
+
+
+      if(p.store === "Target"){
+
+        buttons += `
+          <button
+            class="target"
+            onclick="openTargetAutoCart(${p.i})"
+          >
+            TARGET AUTO CART
+          </button>
+        `;
+
+      }
+
+
+      buttons += `
+        <button
+          class="secondary"
+          onclick="markChecked(${p.i})"
+        >
+          Mark Checked
+        </button>
+
+        <button
+          class="delete"
+          onclick="removeProduct(${p.i})"
+        >
+          Delete
+        </button>
+      `;
+
+
+      c.innerHTML=`
+
+        <div class="name">
+          ${esc(p.name)}
+        </div>
+
+        <div class="meta">
+          Last checked:
+          ${esc(p.lastCheck || "Never")}
+        </div>
+
+        <div class="actions">
+          ${buttons}
+        </div>
+
+      `;
+
+
+      sec.appendChild(c);
+
+    });
+
+
+    d.appendChild(sec);
+
+  });
+
+}
+
+
+function showAdd(){
+
+  document.getElementById("modal").style.display="flex";
+
+  document.getElementById("name").focus();
+
+}
+
+
+function hideAdd(){
+
+  document.getElementById("modal").style.display="none";
+
+}
+
+
+function addProduct(){
+
+  const name=
+    document.getElementById("name")
+    .value
+    .trim();
+
+  const store=
+    document.getElementById("store")
+    .value;
+
+  const url=
+    document.getElementById("url")
+    .value
+    .trim();
+
+
+  if(!name || !url){
+
+    alert(
+      "Enter a product name and product URL."
+    );
+
+    return;
+
+  }
+
+
+  try{
+
+    new URL(url);
+
+  }catch(e){
+
+    alert(
+      "Please enter a valid URL."
+    );
+
+    return;
+
+  }
+
+
+  products.push({
+
+    name:name,
+
+    store:store,
+
+    url:url,
+
+    lastCheck:"Never"
+
+  });
+
+
+  save();
+
+  hideAdd();
+
+
+  document.getElementById("name").value="";
+  document.getElementById("url").value="";
+
+
+  render();
+
+}
+
+
+function openProduct(i){
+
+  products[i].lastCheck=
+    new Date().toLocaleString();
+
+  save();
+
+  render();
+
+  window.open(
+    products[i].url,
+    "_blank"
+  );
+
+}
+
+
+function openTargetAutoCart(i){
+
+  if(!products[i]){
+
+    alert(
+      "Product could not be found."
+    );
+
+    return;
+
+  }
+
+
+  if(products[i].store !== "Target"){
+
+    alert(
+      "This button is only for Target products."
+    );
+
+    return;
+
+  }
+
+
+  products[i].lastCheck=
+    new Date().toLocaleString();
+
+  save();
+
+  render();
+
+
+  window.open(
+    products[i].url,
+    "_blank"
+  );
+
+}
+
+
+function markChecked(i){
+
+  products[i].lastCheck=
+    new Date().toLocaleString();
+
+  save();
+
+  render();
+
+}
+
+
+function removeProduct(i){
+
+  if(
+    confirm(
+      "Remove " +
+      products[i].name +
+      "?"
+    )
+  ){
+
+    products.splice(i,1);
+
     save();
+
     render();
 
-    window.open(products[i].url, "_blank");
+  }
+
 }
 
+
+function openAll(){
+
+  if(!products.length){
+
+    alert(
+      "Add products first."
+    );
+
+    return;
+
+  }
+
+
+  products.forEach((p,i)=>{
+
+    p.lastCheck=
+      new Date().toLocaleString();
+
+
+    setTimeout(
+      ()=>{
+        window.open(
+          p.url,
+          "_blank"
+        );
+      },
+      i*250
+    );
+
+  });
+
+
+  save();
+
+  render();
+
+}
+
+
 render();
+
 </script>
+
 </body>
 </html>
