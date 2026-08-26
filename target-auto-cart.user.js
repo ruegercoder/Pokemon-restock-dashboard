@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Pokémon Target Auto Cart
 // @namespace    pokemon-restock-dashboard
-// @version      3.0.0
-// @description  Monitor Target Pokémon products and click Add to Cart when available.
+// @version      4.0.0
+// @description  Lightweight Target Pokémon stock monitor.
 // @match        https://www.target.com/p/*
 // @grant        none
 // ==/UserScript==
@@ -11,12 +11,9 @@
     "use strict";
 
     let addedToCart = false;
-    let checkTimer = null;
-    let timeoutTimer = null;
-    let observer = null;
+    let timer = null;
 
-    const CHECK_INTERVAL = 1500;
-    const MAX_LOADING_TIME = 15000;
+    const CHECK_INTERVAL = 2000;
 
     function createStatus() {
         if (document.getElementById("pokemon-target-status")) return;
@@ -40,180 +37,133 @@
             fontWeight: "700",
             boxShadow: "0 4px 20px rgba(0,0,0,.35)",
             textAlign: "center",
-            maxWidth: "90%",
             pointerEvents: "none"
         });
 
         document.body.appendChild(box);
     }
 
-    function status(text) {
+    function status(message) {
         createStatus();
 
         const box =
             document.getElementById("pokemon-target-status");
 
         if (box) {
-            box.textContent = text;
+            box.textContent = message;
         }
 
         console.log(
             "[Pokémon Target Monitor]",
-            text
+            message
         );
-    }
-
-    function getPageText() {
-        return (
-            document.body?.innerText ||
-            document.body?.textContent ||
-            ""
-        )
-        .replace(/\s+/g, " ")
-        .toLowerCase();
     }
 
     function findAddToCart() {
 
-        const elements = Array.from(
+        const buttons =
             document.querySelectorAll(
                 "button, [role='button']"
-            )
-        );
+            );
 
-        return elements.find(el => {
+        for (const button of buttons) {
 
             const text = (
-                el.innerText ||
-                el.textContent ||
-                el.getAttribute("aria-label") ||
+                button.innerText ||
+                button.textContent ||
+                button.getAttribute("aria-label") ||
                 ""
             )
             .trim()
             .toLowerCase();
 
-            const visible =
-                el.offsetParent !== null;
-
-            const disabled =
-                el.disabled ||
-                el.getAttribute("aria-disabled") === "true";
-
-            return (
-                visible &&
-                !disabled &&
-                (
-                    text === "add to cart" ||
-                    text.includes("add to cart")
-                )
-            );
-        });
-    }
-
-    function detectVerification(text) {
-
-        return (
-            text.includes("captcha") ||
-            text.includes("verify you are human") ||
-            text.includes("robot or human") ||
-            text.includes("security check") ||
-            text.includes("checking your browser")
-        );
-    }
-
-    function detectOutOfStock(text) {
-
-        const terms = [
-            "out of stock",
-            "sold out",
-            "currently unavailable",
-            "not available",
-            "unavailable",
-            "this item is not available",
-            "shipping unavailable",
-            "pickup unavailable"
-        ];
-
-        return terms.some(term =>
-            text.includes(term)
-        );
-    }
-
-    function clickAddToCart() {
-
-        if (addedToCart) return;
-
-        const button = findAddToCart();
-
-        if (!button) return false;
-
-        status(
-            "🟢 IN STOCK — ADD TO CART FOUND"
-        );
-
-        setTimeout(() => {
-
-            if (addedToCart) return;
-
-            const currentButton =
-                findAddToCart();
-
-            if (!currentButton) {
-                status(
-                    "🟡 ADD TO CART DISAPPEARED — RETRYING"
-                );
-                return;
+            if (
+                text.includes("add to cart") &&
+                !button.disabled &&
+                button.offsetParent !== null
+            ) {
+                return button;
             }
+        }
 
-            currentButton.scrollIntoView({
-                behavior: "instant",
-                block: "center"
-            });
-
-            currentButton.click();
-
-            addedToCart = true;
-
-            stopMonitoring();
-
-            status(
-                "🛒 ADDED TO CART — CHECKOUT MANUALLY"
-            );
-
-        }, 300);
-
-        return true;
+        return null;
     }
 
     function checkStock() {
 
         if (addedToCart) return;
 
+        const addButton =
+            findAddToCart();
+
         /*
-         * Always check Add to Cart first.
+         * IN STOCK
          */
-        if (clickAddToCart()) {
+        if (addButton) {
+
+            status(
+                "🟢 IN STOCK — ADD TO CART FOUND"
+            );
+
+            clearInterval(timer);
+
+            setTimeout(() => {
+
+                if (addedToCart) return;
+
+                const button =
+                    findAddToCart();
+
+                if (!button) {
+                    startChecking();
+                    return;
+                }
+
+                button.click();
+
+                addedToCart = true;
+
+                status(
+                    "🛒 ADDED TO CART — CHECKOUT MANUALLY"
+                );
+
+            }, 300);
+
             return;
         }
 
-        const text = getPageText();
+        const text = (
+            document.body?.innerText ||
+            ""
+        )
+        .replace(/\s+/g, " ")
+        .toLowerCase();
 
         /*
-         * Target verification.
+         * TARGET VERIFICATION
          */
-        if (detectVerification(text)) {
+        if (
+            text.includes("captcha") ||
+            text.includes("verify you are human") ||
+            text.includes("robot or human")
+        ) {
 
             status(
-                "⚠️ TARGET VERIFICATION REQUIRED"
+                "⚠️ TARGET VERIFICATION"
             );
 
             return;
         }
 
         /*
-         * Out of stock.
+         * OUT OF STOCK
          */
-        if (detectOutOfStock(text)) {
+        if (
+            text.includes("out of stock") ||
+            text.includes("sold out") ||
+            text.includes("currently unavailable") ||
+            text.includes("not available")
+        ) {
 
             status(
                 "🔴 OUT OF STOCK"
@@ -223,29 +173,24 @@
         }
 
         /*
-         * Product is still loading.
+         * PAGE IS LOADED BUT BUTTON
+         * HAS NOT APPEARED YET.
          */
         status(
             "🟡 CHECKING TARGET..."
         );
     }
 
-    function stopMonitoring() {
+    function startChecking() {
 
-        if (checkTimer) {
-            clearInterval(checkTimer);
-            checkTimer = null;
+        if (timer) {
+            clearInterval(timer);
         }
 
-        if (timeoutTimer) {
-            clearTimeout(timeoutTimer);
-            timeoutTimer = null;
-        }
-
-        if (observer) {
-            observer.disconnect();
-            observer = null;
-        }
+        timer = setInterval(
+            checkStock,
+            CHECK_INTERVAL
+        );
     }
 
     function start() {
@@ -257,89 +202,16 @@
         );
 
         /*
-         * Give Target a moment to render.
+         * Wait for Target to finish rendering.
          */
         setTimeout(() => {
 
             checkStock();
+            startChecking();
 
-        }, 1000);
-
-        /*
-         * Regular stock checks.
-         */
-        checkTimer = setInterval(() => {
-
-            checkStock();
-
-        }, CHECK_INTERVAL);
-
-        /*
-         * Prevent the checker from hanging forever.
-         */
-        timeoutTimer = setTimeout(() => {
-
-            if (addedToCart) return;
-
-            const button = findAddToCart();
-
-            if (button) {
-                clickAddToCart();
-                return;
-            }
-
-            const text = getPageText();
-
-            if (detectVerification(text)) {
-
-                status(
-                    "⚠️ TARGET VERIFICATION REQUIRED"
-                );
-
-                return;
-            }
-
-            if (detectOutOfStock(text)) {
-
-                status(
-                    "🔴 OUT OF STOCK"
-                );
-
-                return;
-            }
-
-            status(
-                "🟠 TARGET PAGE TOOK TOO LONG TO LOAD"
-            );
-
-        }, MAX_LOADING_TIME);
-
-        /*
-         * Watch for Target dynamically adding
-         * the Add to Cart button.
-         */
-        observer = new MutationObserver(() => {
-
-            if (addedToCart) return;
-
-            if (findAddToCart()) {
-                clickAddToCart();
-            }
-
-        });
-
-        observer.observe(
-            document.documentElement,
-            {
-                childList: true,
-                subtree: true
-            }
-        );
+        }, 1500);
     }
 
-    /*
-     * Start once the page exists.
-     */
     if (
         document.readyState === "loading"
     ) {
