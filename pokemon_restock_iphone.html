@@ -547,42 +547,25 @@ function openProduct(i){
 function openTargetAutoCart(i){
 
   if(!products[i]){
-
-    alert(
-      "Product could not be found."
-    );
-
+    alert("Product could not be found.");
     return;
-
   }
-
 
   if(products[i].store !== "Target"){
-
-    alert(
-      "This button is only for Target products."
-    );
-
+    alert("This button is only for Target products.");
     return;
-
   }
 
-
-  products[i].lastCheck=
+  products[i].lastCheck =
     new Date().toLocaleString();
 
   save();
-
   render();
 
-
-  window.open(
-    products[i].url,
-    "_blank"
-  );
-
+  // Navigate the current Safari tab directly.
+  // This avoids window.open() and its popup/universal-link behavior.
+  window.location.href = products[i].url;
 }
-
 
 function markChecked(i){
 
