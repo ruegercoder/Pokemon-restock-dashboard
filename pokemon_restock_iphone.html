@@ -1,205 +1,315 @@
 <!doctype html>
 <html lang="en">
 <head>
+
 <link rel="manifest" href="manifest.json">
+
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#f5f5f7">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1, viewport-fit=cover"
+>
+
+<meta
+  name="apple-mobile-web-app-capable"
+  content="yes"
+>
+
+<meta
+  name="apple-mobile-web-app-status-bar-style"
+  content="default"
+>
+
+<meta
+  name="theme-color"
+  content="#f5f5f7"
+>
+
 <title>Pokémon Restock Dashboard</title>
 
 <style>
+
 :root{
-  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
+    "Segoe UI",
+    sans-serif;
+
   background:#f5f5f7;
-  color:#111
+  color:#111;
 }
 
-*{box-sizing:border-box}
+*{
+  box-sizing:border-box;
+}
 
 body{
   margin:0;
-  background:#f5f5f7
+  background:#f5f5f7;
 }
 
 header{
   position:sticky;
   top:0;
   z-index:5;
+
   background:rgba(245,245,247,.94);
+
   backdrop-filter:blur(14px);
-  padding:calc(14px + env(safe-area-inset-top)) 16px 12px;
-  border-bottom:1px solid #ddd
+
+  padding:
+    calc(14px + env(safe-area-inset-top))
+    16px
+    12px;
+
+  border-bottom:1px solid #ddd;
 }
 
 h1{
   font-size:24px;
-  margin:0 0 4px
+  margin:0 0 4px;
 }
 
 .sub{
   font-size:13px;
-  color:#666
+  color:#666;
 }
 
 .toolbar{
   display:flex;
   gap:8px;
-  margin-top:12px
+  margin-top:12px;
 }
 
 button{
   border:0;
   border-radius:12px;
   padding:11px 14px;
+
   font-size:15px;
   font-weight:600;
+
   background:#111;
-  color:#fff
+  color:#fff;
 }
 
 button.secondary{
   background:#e8e8ed;
-  color:#111
+  color:#111;
 }
 
 main{
   max-width:850px;
   margin:auto;
-  padding:12px 14px 40px
+
+  padding:
+    12px
+    14px
+    40px;
 }
 
 .store{
-  margin:14px 0
+  margin:14px 0;
 }
 
 .store h2{
   font-size:18px;
-  margin:10px 2px
+  margin:10px 2px;
 }
 
 .card{
   background:#fff;
+
   border-radius:18px;
+
   padding:15px;
+
   margin:9px 0;
-  box-shadow:0 1px 4px #00000012
+
+  box-shadow:
+    0 1px 4px #00000012;
 }
 
 .name{
   font-size:17px;
   font-weight:700;
-  margin-bottom:6px
+
+  margin-bottom:6px;
 }
 
 .meta{
   font-size:12px;
   color:#777;
-  margin-bottom:12px
+
+  margin-bottom:12px;
 }
 
 .actions{
   display:flex;
   gap:7px;
-  flex-wrap:wrap
+  flex-wrap:wrap;
 }
 
 .actions button{
   flex:1;
-  min-width:105px
+  min-width:105px;
 }
 
 .open{
-  background:#007aff
+  background:#007aff;
 }
 
 .target{
-  background:#111
+  background:#111;
 }
 
 .delete{
   background:#eee;
-  color:#c00
+  color:#c00;
 }
 
 .empty{
   text-align:center;
   color:#777;
-  padding:60px 20px
+
+  padding:60px 20px;
 }
 
 .modal{
   display:none;
+
   position:fixed;
   inset:0;
+
   background:#0007;
+
   z-index:20;
-  align-items:flex-end
+
+  align-items:flex-end;
 }
 
 .sheet{
   background:#fff;
-  border-radius:22px 22px 0 0;
-  padding:18px 16px calc(22px + env(safe-area-inset-bottom));
+
+  border-radius:
+    22px
+    22px
+    0
+    0;
+
+  padding:
+    18px
+    16px
+    calc(22px + env(safe-area-inset-bottom));
+
   width:100%;
-  max-height:90vh
+
+  max-height:90vh;
 }
 
 label{
   display:block;
+
   font-size:13px;
   font-weight:600;
-  margin:12px 0 6px
+
+  margin:12px 0 6px;
 }
 
-input,select{
+input,
+select{
   width:100%;
+
   padding:13px;
-  border:1px solid #ccc;
+
+  border:
+    1px solid #ccc;
+
   border-radius:11px;
+
   font-size:16px;
-  background:#fff
+
+  background:#fff;
 }
 
 .row{
   display:flex;
   gap:8px;
-  margin-top:15px
+
+  margin-top:15px;
 }
 
 .row button{
-  flex:1
+  flex:1;
 }
 
 .notice{
   background:#fff8df;
+
   border-radius:12px;
+
   padding:10px;
+
   font-size:12px;
+
   color:#665300;
-  margin-top:12px
+
+  margin-top:12px;
 }
+
+/* Target test message */
+
+.targetInfo{
+  background:#eef6ff;
+
+  color:#174b7a;
+
+  border-radius:12px;
+
+  padding:10px;
+
+  margin-top:10px;
+
+  font-size:12px;
+
+  display:none;
+}
+
 </style>
+
 </head>
 
 <body>
 
+
 <header>
 
-<h1>Pokémon Restock Dashboard</h1>
+<h1>
+Pokémon Restock Dashboard
+</h1>
 
-<div class="sub" id="summary">
+<div
+  class="sub"
+  id="summary"
+>
 0 products tracked
 </div>
 
 <div class="toolbar">
 
-<button onclick="showAdd()">
+<button
+  onclick="showAdd()"
+>
 ＋ Add Product
 </button>
 
-<button class="secondary" onclick="openAll()">
+<button
+  class="secondary"
+  onclick="openAll()"
+>
 Open All
 </button>
 
@@ -207,81 +317,136 @@ Open All
 
 </header>
 
+
 <main id="dashboard"></main>
 
 
 <!-- ADD PRODUCT MODAL -->
 
-<div class="modal" id="modal">
+<div
+  class="modal"
+  id="modal"
+>
 
 <div class="sheet">
 
-<h2>Add Pokémon Product</h2>
+<h2>
+Add Pokémon Product
+</h2>
 
-<label>Product name</label>
+
+<label>
+Product name
+</label>
 
 <input
-id="name"
-placeholder="Pokémon 151 Booster Bundle"
+  id="name"
+  placeholder="Pokémon 151 Booster Bundle"
 >
 
-<label>Store</label>
+
+<label>
+Store
+</label>
 
 <select id="store">
 
-<option>Pokémon Center</option>
-<option>Target</option>
-<option>Walmart</option>
-<option>Best Buy</option>
+<option>
+Pokémon Center
+</option>
+
+<option>
+Target
+</option>
+
+<option>
+Walmart
+</option>
+
+<option>
+Best Buy
+</option>
 
 </select>
 
-<label>Product page URL</label>
+
+<label>
+Product page URL
+</label>
 
 <input
-id="url"
-type="url"
-placeholder="https://..."
+  id="url"
+  type="url"
+  placeholder="https://..."
 >
+
 
 <div class="row">
 
 <button
-class="secondary"
-onclick="hideAdd()"
+  class="secondary"
+  onclick="hideAdd()"
 >
 Cancel
 </button>
 
-<button onclick="addProduct()">
+<button
+  onclick="addProduct()"
+>
 Save Product
 </button>
 
 </div>
 
+
 <div class="notice">
-Safe mode: this app opens the retailer page.
+
+Safe mode:
+this app opens the retailer page.
 You control checkout.
+
 </div>
 
 </div>
+
 </div>
 
 
 <script>
 
-const STORES=[
+
+/* =====================================================
+   STORE LIST
+===================================================== */
+
+const STORES = [
+
   "Pokémon Center",
+
   "Target",
+
   "Walmart",
+
   "Best Buy"
+
 ];
 
-let products=
-JSON.parse(
-  localStorage.getItem("pokemonProducts") || "[]"
-);
 
+/* =====================================================
+   LOAD PRODUCTS
+===================================================== */
+
+let products =
+  JSON.parse(
+    localStorage.getItem(
+      "pokemonProducts"
+    ) || "[]"
+  );
+
+
+/* =====================================================
+   SAVE
+===================================================== */
 
 function save(){
 
@@ -293,10 +458,15 @@ function save(){
 }
 
 
+/* =====================================================
+   ESCAPE HTML
+===================================================== */
+
 function esc(s){
 
   return String(s).replace(
     /[&<>"']/g,
+
     m => ({
       "&":"&amp;",
       "<":"&lt;",
@@ -309,24 +479,45 @@ function esc(s){
 }
 
 
+/* =====================================================
+   RENDER DASHBOARD
+===================================================== */
+
 function render(){
 
-  const d=
-    document.getElementById("dashboard");
+  const d =
+    document.getElementById(
+      "dashboard"
+    );
 
-  document.getElementById("summary").textContent =
+
+  document.getElementById(
+    "summary"
+  ).textContent =
+
     products.length +
+
     " product" +
-    (products.length===1 ? "" : "s") +
+
+    (
+      products.length === 1
+        ? ""
+        : "s"
+    ) +
+
     " tracked";
 
 
   if(!products.length){
 
     d.innerHTML =
+
       '<div class="empty">' +
+
       'No Pokémon products yet.<br><br>' +
+
       'Tap <b>＋ Add Product</b> to get started.' +
+
       '</div>';
 
     return;
@@ -334,123 +525,174 @@ function render(){
   }
 
 
-  d.innerHTML="";
+  d.innerHTML = "";
 
 
-  STORES.forEach(store=>{
+  STORES.forEach(
+    store => {
 
-    const list=
-      products
-      .map((p,i)=>({...p,i}))
-      .filter(p=>p.store===store);
+      const list =
 
+        products
 
-    if(!list.length) return;
+          .map(
+            (p,i) => ({
+              ...p,
+              i
+            })
+          )
 
-
-    const sec=
-      document.createElement("section");
-
-    sec.className="store";
-
-    sec.innerHTML=
-      "<h2>" +
-      store +
-      " · " +
-      list.length +
-      "</h2>";
+          .filter(
+            p => p.store === store
+          );
 
 
-    list.forEach(p=>{
-
-      const c=
-        document.createElement("div");
-
-      c.className="card";
-
-
-      let buttons=`
-
-        <button
-          class="open"
-          onclick="openProduct(${p.i})"
-        >
-          OPEN & BUY
-        </button>
-
-      `;
-
-
-      if(p.store==="Target"){
-
-        buttons+=`
-
-          <button
-            class="target"
-            onclick="openTargetAutoCart(${p.i})"
-          >
-            TARGET AUTO CART
-          </button>
-
-        `;
-
+      if(!list.length){
+        return;
       }
 
 
-      buttons+=`
-
-        <button
-          class="secondary"
-          onclick="markChecked(${p.i})"
-        >
-          Mark Checked
-        </button>
-
-        <button
-          class="delete"
-          onclick="removeProduct(${p.i})"
-        >
-          Delete
-        </button>
-
-      `;
+      const sec =
+        document.createElement(
+          "section"
+        );
 
 
-      c.innerHTML=`
-
-        <div class="name">
-          ${esc(p.name)}
-        </div>
-
-        <div class="meta">
-          Last checked:
-          ${esc(p.lastCheck || "Never")}
-        </div>
-
-        <div class="actions">
-          ${buttons}
-        </div>
-
-      `;
+      sec.className =
+        "store";
 
 
-      sec.appendChild(c);
+      sec.innerHTML =
 
-    });
+        "<h2>" +
+
+        store +
+
+        " · " +
+
+        list.length +
+
+        "</h2>";
 
 
-    d.appendChild(sec);
+      list.forEach(
+        p => {
 
-  });
+          const c =
+            document.createElement(
+              "div"
+            );
+
+
+          c.className =
+            "card";
+
+
+          let buttons = `
+
+            <button
+              class="open"
+              onclick="openProduct(${p.i})"
+            >
+              OPEN & BUY
+            </button>
+
+          `;
+
+
+          /*
+             TARGET BUTTON
+          */
+
+          if(
+            p.store === "Target"
+          ){
+
+            buttons += `
+
+              <button
+                class="target"
+                onclick="openTargetAutoCart(${p.i})"
+              >
+                TARGET AUTO CART
+              </button>
+
+            `;
+
+          }
+
+
+          buttons += `
+
+            <button
+              class="secondary"
+              onclick="markChecked(${p.i})"
+            >
+              Mark Checked
+            </button>
+
+            <button
+              class="delete"
+              onclick="removeProduct(${p.i})"
+            >
+              Delete
+            </button>
+
+          `;
+
+
+          c.innerHTML = `
+
+            <div class="name">
+
+              ${esc(p.name)}
+
+            </div>
+
+            <div class="meta">
+
+              Last checked:
+
+              ${esc(
+                p.lastCheck ||
+                "Never"
+              )}
+
+            </div>
+
+            <div class="actions">
+
+              ${buttons}
+
+            </div>
+
+          `;
+
+
+          sec.appendChild(c);
+
+        }
+      );
+
+
+      d.appendChild(sec);
+
+    }
+  );
 
 }
 
+
+/* =====================================================
+   ADD PRODUCT
+===================================================== */
 
 function showAdd(){
 
   document.getElementById(
     "modal"
-  ).style.display="flex";
+  ).style.display = "flex";
+
 
   document.getElementById(
     "name"
@@ -463,30 +705,38 @@ function hideAdd(){
 
   document.getElementById(
     "modal"
-  ).style.display="none";
+  ).style.display = "none";
 
 }
 
 
 function addProduct(){
 
-  const name=
+  const name =
+
     document.getElementById(
       "name"
     ).value.trim();
 
-  const store=
+
+  const store =
+
     document.getElementById(
       "store"
     ).value;
 
-  const url=
+
+  const url =
+
     document.getElementById(
       "url"
     ).value.trim();
 
 
-  if(!name || !url){
+  if(
+    !name ||
+    !url
+  ){
 
     alert(
       "Enter a product name and product URL."
@@ -532,17 +782,22 @@ function addProduct(){
 
   document.getElementById(
     "name"
-  ).value="";
+  ).value = "";
+
 
   document.getElementById(
     "url"
-  ).value="";
+  ).value = "";
 
 
   render();
 
 }
 
+
+/* =====================================================
+   NORMAL OPEN & BUY
+===================================================== */
 
 function openProduct(i){
 
@@ -557,59 +812,184 @@ function openProduct(i){
   }
 
 
-  products[i].lastCheck=
+  products[i].lastCheck =
     new Date().toLocaleString();
+
 
   save();
 
   render();
 
 
-  window.open(
-    products[i].url,
-    "_blank"
+  /*
+     IMPORTANT:
+     Use a normal external link.
+  */
+
+  const link =
+    document.createElement(
+      "a"
+    );
+
+
+  link.href =
+    products[i].url;
+
+
+  link.target =
+    "_blank";
+
+
+  link.rel =
+    "noopener";
+
+
+  document.body.appendChild(
+    link
+  );
+
+
+  link.click();
+
+
+  link.remove();
+
+}
+
+
+/* =====================================================
+   TARGET AUTO CART
+===================================================== */
+
+function openTargetAutoCart(i){
+
+  if(!products[i]){
+
+    alert(
+      "Product could not be found."
+    );
+
+    return;
+
+  }
+
+
+  if(
+    products[i].store !== "Target"
+  ){
+
+    alert(
+      "This button is only for Target products."
+    );
+
+    return;
+
+  }
+
+
+  const targetURL =
+    products[i].url.trim();
+
+
+  if(!targetURL){
+
+    alert(
+      "No Target product URL is saved."
+    );
+
+    return;
+
+  }
+
+
+  /*
+     Save last checked time.
+  */
+
+  products[i].lastCheck =
+    new Date().toLocaleString();
+
+
+  save();
+
+  render();
+
+
+  /*
+     IMPORTANT:
+     Do NOT use window.location.href.
+
+     Create a real external Safari link.
+  */
+
+  const link =
+    document.createElement(
+      "a"
+    );
+
+
+  link.href =
+    targetURL;
+
+
+  link.target =
+    "_blank";
+
+
+  link.rel =
+    "noopener noreferrer";
+
+
+  /*
+     Add it to the document before clicking.
+     This makes it behave like a real link
+     rather than JavaScript navigation.
+  */
+
+  document.body.appendChild(
+    link
+  );
+
+
+  link.click();
+
+
+  link.remove();
+
+
+  /*
+     Diagnostic message.
+  */
+
+  setTimeout(
+    () => {
+
+      console.log(
+        "[Pokémon Dashboard] Target opened:",
+        targetURL
+      );
+
+    },
+    100
   );
 
 }
 
 
-/*
-  TARGET AUTO CART
+/* =====================================================
+   MARK CHECKED
+===================================================== */
 
-  Opens the saved Target product directly.
-
-  No copy/paste.
-  No launcher screen.
-*/
-function openTargetAutoCart(i){
+function markChecked(i){
 
   if(!products[i]){
-    alert("Product could not be found.");
     return;
   }
 
-  if(products[i].store !== "Target"){
-    alert("This button is only for Target products.");
-    return;
-  }
 
   products[i].lastCheck =
     new Date().toLocaleString();
 
-  save();
-
-  // Open the saved Target product in Safari
-  window.location.href = products[i].url;
-}
-
-
-function markChecked(i){
-
-  if(!products[i]) return;
-
-
-  products[i].lastCheck=
-    new Date().toLocaleString();
 
   save();
 
@@ -618,9 +998,15 @@ function markChecked(i){
 }
 
 
+/* =====================================================
+   DELETE
+===================================================== */
+
 function removeProduct(i){
 
-  if(!products[i]) return;
+  if(!products[i]){
+    return;
+  }
 
 
   if(
@@ -631,7 +1017,11 @@ function removeProduct(i){
     )
   ){
 
-    products.splice(i,1);
+    products.splice(
+      i,
+      1
+    );
+
 
     save();
 
@@ -641,6 +1031,10 @@ function removeProduct(i){
 
 }
 
+
+/* =====================================================
+   OPEN ALL
+===================================================== */
 
 function openAll(){
 
@@ -655,23 +1049,52 @@ function openAll(){
   }
 
 
-  products.forEach((p,i)=>{
+  products.forEach(
+    (p,i) => {
 
-    p.lastCheck=
-      new Date().toLocaleString();
+      p.lastCheck =
+        new Date().toLocaleString();
 
 
-    setTimeout(
-      ()=>{
-        window.open(
-          p.url,
-          "_blank"
-        );
-      },
-      i*250
-    );
+      setTimeout(
+        () => {
 
-  });
+          const link =
+            document.createElement(
+              "a"
+            );
+
+
+          link.href =
+            p.url;
+
+
+          link.target =
+            "_blank";
+
+
+          link.rel =
+            "noopener noreferrer";
+
+
+          document.body.appendChild(
+            link
+          );
+
+
+          link.click();
+
+
+          link.remove();
+
+        },
+
+        i * 250
+
+      );
+
+    }
+  );
 
 
   save();
@@ -681,7 +1104,12 @@ function openAll(){
 }
 
 
+/* =====================================================
+   START
+===================================================== */
+
 render();
+
 
 </script>
 
