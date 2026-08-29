@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Pokémon Target Auto Cart
 // @namespace    pokemon-restock-dashboard
-// @version      4.0.0
-// @description  Lightweight Target Pokémon stock monitor.
+// @version      5.0.0
+// @description  Target Pokémon Add-to-Cart monitor.
 // @match        https://www.target.com/p/*
 // @grant        none
 // ==/UserScript==
@@ -11,9 +11,13 @@
     "use strict";
 
     let addedToCart = false;
-    let timer = null;
+    let checking = false;
 
-    const CHECK_INTERVAL = 2000;
+    const CHECK_INTERVAL = 1500;
+
+    // --------------------------------------------------
+    // STATUS BOX
+    // --------------------------------------------------
 
     function createStatus() {
         if (document.getElementById("pokemon-target-status")) return;
@@ -53,145 +57,229 @@
             box.textContent = message;
         }
 
-        console.log(
-            "[Pokémon Target Monitor]",
-            message
-        );
+        console.log("[Pokémon Target Monitor]", message);
     }
+
+    // --------------------------------------------------
+    // FIND ADD TO CART
+    // --------------------------------------------------
 
     function findAddToCart() {
 
-        const buttons =
-            document.querySelectorAll(
-                "button, [role='button']"
-            );
+        const elements = document.querySelectorAll(
+            "button, [role='button'], input[type='button'], input[type='submit']"
+        );
 
-        for (const button of buttons) {
+        for (const element of elements) {
+
+            if (!element || element.disabled) {
+                continue;
+            }
+
+            const style =
+                window.getComputedStyle(element);
+
+            if (
+                style.display === "none" ||
+                style.visibility === "hidden"
+            ) {
+                continue;
+            }
 
             const text = (
-                button.innerText ||
-                button.textContent ||
-                button.getAttribute("aria-label") ||
+                element.innerText ||
+                element.textContent ||
+                element.value ||
+                element.getAttribute("aria-label") ||
                 ""
             )
-            .trim()
-            .toLowerCase();
+                .trim()
+                .replace(/\s+/g, " ")
+                .toLowerCase();
+
+            if (text === "add to cart") {
+                return element;
+            }
 
             if (
                 text.includes("add to cart") &&
-                !button.disabled &&
-                button.offsetParent !== null
+                !text.includes("remove")
             ) {
-                return button;
+                return element;
             }
         }
 
         return null;
     }
 
-    function checkStock() {
+    // --------------------------------------------------
+    // CLICK ADD TO CART
+    // --------------------------------------------------
+
+    function addToCart(button) {
 
         if (addedToCart) return;
 
-        const addButton =
-            findAddToCart();
+        addedToCart = true;
 
-        /*
-         * IN STOCK
-         */
-        if (addButton) {
+        status("🟢 ADD TO CART FOUND — CLICKING");
 
-            status(
-                "🟢 IN STOCK — ADD TO CART FOUND"
-            );
+        console.log(
+            "[Pokémon Target Monitor] Clicking:",
+            button
+        );
 
-            clearInterval(timer);
+        try {
+            button.scrollIntoView({
+                behavior: "instant",
+                block: "center"
+            });
+        } catch (e) {}
 
-            setTimeout(() => {
+        setTimeout(() => {
 
-                if (addedToCart) return;
-
-                const button =
-                    findAddToCart();
-
-                if (!button) {
-                    startChecking();
-                    return;
-                }
-
+            try {
                 button.click();
 
-                addedToCart = true;
-
                 status(
-                    "🛒 ADDED TO CART — CHECKOUT MANUALLY"
+                    "🛒 ADD TO CART CLICKED — CHECKOUT MANUALLY"
                 );
 
-            }, 300);
+            } catch (error) {
 
-            return;
-        }
+                console.error(error);
 
-        const text = (
-            document.body?.innerText ||
-            ""
-        )
-        .replace(/\s+/g, " ")
-        .toLowerCase();
+                addedToCart = false;
 
-        /*
-         * TARGET VERIFICATION
-         */
-        if (
-            text.includes("captcha") ||
-            text.includes("verify you are human") ||
-            text.includes("robot or human")
-        ) {
+                status(
+                    "⚠️ CLICK FAILED — RETRYING"
+                );
+            }
+
+        }, 100);
+    }
+
+    // --------------------------------------------------
+    // CHECK PAGE
+    // --------------------------------------------------
+
+    function checkPage() {
+
+        if (addedToCart) return;
+
+        if (checking) return;
+
+        checking = true;
+
+        try {
+
+            const addButton =
+                findAddToCart();
+
+            // -----------------------------
+            // ADD TO CART FOUND
+            // -----------------------------
+
+            if (addButton) {
+
+                addToCart(addButton);
+
+                return;
+            }
+
+            // -----------------------------
+            // PAGE TEXT
+            // -----------------------------
+
+            const pageText = (
+                document.body?.innerText ||
+                ""
+            )
+                .replace(/\s+/g, " ")
+                .toLowerCase();
+
+            // -----------------------------
+            // TARGET VERIFICATION
+            // -----------------------------
+
+            if (
+                pageText.includes("captcha") ||
+                pageText.includes("verify you are human") ||
+                pageText.includes("robot or human") ||
+                pageText.includes("access denied")
+            ) {
+
+                status(
+                    "⚠️ TARGET VERIFICATION — WAITING"
+                );
+
+                return;
+            }
+
+            // -----------------------------
+            // OUT OF STOCK
+            // -----------------------------
+
+            if (
+                pageText.includes("out of stock") ||
+                pageText.includes("sold out") ||
+                pageText.includes("currently unavailable")
+            ) {
+
+                status(
+                    "🔴 OUT OF STOCK — MONITORING"
+                );
+
+                return;
+            }
+
+            // -----------------------------
+            // STILL LOADING
+            // -----------------------------
 
             status(
-                "⚠️ TARGET VERIFICATION"
+                "🟡 MONITORING TARGET..."
             );
 
-            return;
+        } finally {
+
+            checking = false;
         }
+    }
 
-        /*
-         * OUT OF STOCK
-         */
-        if (
-            text.includes("out of stock") ||
-            text.includes("sold out") ||
-            text.includes("currently unavailable") ||
-            text.includes("not available")
-        ) {
+    // --------------------------------------------------
+    // MUTATION OBSERVER
+    // --------------------------------------------------
 
-            status(
-                "🔴 OUT OF STOCK"
-            );
+    function watchPageChanges() {
 
-            return;
-        }
+        const observer =
+            new MutationObserver(() => {
 
-        /*
-         * PAGE IS LOADED BUT BUTTON
-         * HAS NOT APPEARED YET.
-         */
-        status(
-            "🟡 CHECKING TARGET..."
+                if (!addedToCart) {
+                    checkPage();
+                }
+
+            });
+
+        observer.observe(
+            document.body,
+            {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: [
+                    "disabled",
+                    "aria-label",
+                    "class"
+                ]
+            }
         );
     }
 
-    function startChecking() {
-
-        if (timer) {
-            clearInterval(timer);
-        }
-
-        timer = setInterval(
-            checkStock,
-            CHECK_INTERVAL
-        );
-    }
+    // --------------------------------------------------
+    // START
+    // --------------------------------------------------
 
     function start() {
 
@@ -201,16 +289,21 @@
             "🟡 Pokémon Target Monitor Active"
         );
 
-        /*
-         * Wait for Target to finish rendering.
-         */
-        setTimeout(() => {
+        watchPageChanges();
 
-            checkStock();
-            startChecking();
+        // Initial checks
+        checkPage();
 
-        }, 1500);
+        // Backup polling
+        setInterval(
+            checkPage,
+            CHECK_INTERVAL
+        );
     }
+
+    // --------------------------------------------------
+    // WAIT FOR PAGE
+    // --------------------------------------------------
 
     if (
         document.readyState === "loading"
@@ -225,7 +318,6 @@
     } else {
 
         start();
-
     }
 
 })();
