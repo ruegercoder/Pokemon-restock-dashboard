@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Pokémon Target Auto Cart
 // @namespace    pokemon-restock-dashboard
-// @version      5.0.0
-// @description  Target Pokémon Add-to-Cart monitor.
+// @version      6.0.0
+// @description  Target Pokémon page monitor.
 // @match        https://www.target.com/p/*
 // @grant        none
 // ==/UserScript==
@@ -11,16 +11,19 @@
     "use strict";
 
     let addedToCart = false;
-    let checking = false;
+    let lastState = "";
 
-    const CHECK_INTERVAL = 1500;
+    const CHECK_INTERVAL = 1000;
 
-    // --------------------------------------------------
-    // STATUS BOX
-    // --------------------------------------------------
+    // ---------------------------------------------
+    // STATUS
+    // ---------------------------------------------
 
     function createStatus() {
-        if (document.getElementById("pokemon-target-status")) return;
+
+        if (document.getElementById("pokemon-target-status")) {
+            return;
+        }
 
         const box = document.createElement("div");
 
@@ -31,279 +34,402 @@
             top: "15px",
             left: "50%",
             transform: "translateX(-50%)",
-            zIndex: "999999",
+            zIndex: "2147483647",
             background: "#111",
             color: "#fff",
             padding: "12px 18px",
             borderRadius: "14px",
             fontFamily: "Arial,sans-serif",
-            fontSize: "15px",
+            fontSize: "14px",
             fontWeight: "700",
-            boxShadow: "0 4px 20px rgba(0,0,0,.35)",
+            boxShadow: "0 4px 20px rgba(0,0,0,.4)",
             textAlign: "center",
-            pointerEvents: "none"
+            maxWidth: "90vw"
         });
 
         document.body.appendChild(box);
     }
 
+
     function status(message) {
+
         createStatus();
 
         const box =
-            document.getElementById("pokemon-target-status");
+            document.getElementById(
+                "pokemon-target-status"
+            );
 
         if (box) {
             box.textContent = message;
         }
 
-        console.log("[Pokémon Target Monitor]", message);
+        if (message !== lastState) {
+
+            console.log(
+                "[Pokémon Target]",
+                message
+            );
+
+            lastState = message;
+        }
     }
 
-    // --------------------------------------------------
+
+    // ---------------------------------------------
+    // TARGET VERIFICATION
+    // ---------------------------------------------
+
+    function isVerificationPage() {
+
+        const text =
+            document.documentElement?.innerText
+            ?.toLowerCase() || "";
+
+        return (
+
+            text.includes("verify you are human") ||
+
+            text.includes("robot or human") ||
+
+            text.includes("captcha") ||
+
+            text.includes("access denied") ||
+
+            text.includes("unusual traffic")
+
+        );
+    }
+
+
+    // ---------------------------------------------
     // FIND ADD TO CART
-    // --------------------------------------------------
+    // ---------------------------------------------
 
     function findAddToCart() {
 
-        const elements = document.querySelectorAll(
-            "button, [role='button'], input[type='button'], input[type='submit']"
-        );
+        const elements =
+            document.querySelectorAll(
+                "button, [role='button'], input"
+            );
 
         for (const element of elements) {
 
-            if (!element || element.disabled) {
-                continue;
-            }
+            if (!element) continue;
 
-            const style =
-                window.getComputedStyle(element);
-
-            if (
-                style.display === "none" ||
-                style.visibility === "hidden"
-            ) {
-                continue;
-            }
+            if (element.disabled) continue;
 
             const text = (
-                element.innerText ||
-                element.textContent ||
-                element.value ||
-                element.getAttribute("aria-label") ||
-                ""
-            )
-                .trim()
-                .replace(/\s+/g, " ")
-                .toLowerCase();
 
-            if (text === "add to cart") {
-                return element;
-            }
+                element.innerText ||
+
+                element.textContent ||
+
+                element.value ||
+
+                element.getAttribute(
+                    "aria-label"
+                ) ||
+
+                ""
+
+            )
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+
 
             if (
-                text.includes("add to cart") &&
-                !text.includes("remove")
+                text === "add to cart"
             ) {
+
                 return element;
+
             }
+
+
+            if (
+                text.includes("add to cart")
+            ) {
+
+                return element;
+
+            }
+
         }
 
         return null;
     }
 
-    // --------------------------------------------------
-    // CLICK ADD TO CART
-    // --------------------------------------------------
 
-    function addToCart(button) {
+    // ---------------------------------------------
+    // PRODUCT PAGE DETECTION
+    // ---------------------------------------------
 
-        if (addedToCart) return;
+    function productPageLoaded() {
 
-        addedToCart = true;
+        const title =
+            document.title
+                ?.toLowerCase() || "";
 
-        status("🟢 ADD TO CART FOUND — CLICKING");
 
-        console.log(
-            "[Pokémon Target Monitor] Clicking:",
-            button
-        );
+        const body =
+            document.body?.innerText
+                ?.toLowerCase() || "";
 
-        try {
-            button.scrollIntoView({
-                behavior: "instant",
-                block: "center"
-            });
-        } catch (e) {}
 
-        setTimeout(() => {
+        /*
+         * Target product pages normally contain
+         * product-related text.
+         */
 
-            try {
-                button.click();
+        const productIndicators = [
 
-                status(
-                    "🛒 ADD TO CART CLICKED — CHECKOUT MANUALLY"
-                );
+            "quantity",
 
-            } catch (error) {
+            "shipping",
 
-                console.error(error);
+            "pickup",
 
-                addedToCart = false;
+            "delivery",
 
-                status(
-                    "⚠️ CLICK FAILED — RETRYING"
-                );
+            "add to cart",
+
+            "sold out",
+
+            "out of stock",
+
+            "in stock",
+
+            "currently unavailable"
+
+        ];
+
+
+        for (
+            const indicator
+            of productIndicators
+        ) {
+
+            if (
+                body.includes(indicator)
+            ) {
+
+                return true;
+
             }
 
-        }, 100);
+        }
+
+
+        /*
+         * A product title in the document
+         * is another useful indicator.
+         */
+
+        if (
+            title &&
+            !title.includes("target : expect more")
+        ) {
+
+            return true;
+
+        }
+
+
+        return false;
     }
 
-    // --------------------------------------------------
-    // CHECK PAGE
-    // --------------------------------------------------
 
-    function checkPage() {
+    // ---------------------------------------------
+    // CHECK AVAILABILITY
+    // ---------------------------------------------
 
-        if (addedToCart) return;
+    function checkStock() {
 
-        if (checking) return;
+        if (addedToCart) {
+            return;
+        }
 
-        checking = true;
 
-        try {
+        // Verification takes priority.
 
-            const addButton =
-                findAddToCart();
-
-            // -----------------------------
-            // ADD TO CART FOUND
-            // -----------------------------
-
-            if (addButton) {
-
-                addToCart(addButton);
-
-                return;
-            }
-
-            // -----------------------------
-            // PAGE TEXT
-            // -----------------------------
-
-            const pageText = (
-                document.body?.innerText ||
-                ""
-            )
-                .replace(/\s+/g, " ")
-                .toLowerCase();
-
-            // -----------------------------
-            // TARGET VERIFICATION
-            // -----------------------------
-
-            if (
-                pageText.includes("captcha") ||
-                pageText.includes("verify you are human") ||
-                pageText.includes("robot or human") ||
-                pageText.includes("access denied")
-            ) {
-
-                status(
-                    "⚠️ TARGET VERIFICATION — WAITING"
-                );
-
-                return;
-            }
-
-            // -----------------------------
-            // OUT OF STOCK
-            // -----------------------------
-
-            if (
-                pageText.includes("out of stock") ||
-                pageText.includes("sold out") ||
-                pageText.includes("currently unavailable")
-            ) {
-
-                status(
-                    "🔴 OUT OF STOCK — MONITORING"
-                );
-
-                return;
-            }
-
-            // -----------------------------
-            // STILL LOADING
-            // -----------------------------
+        if (isVerificationPage()) {
 
             status(
-                "🟡 MONITORING TARGET..."
+                "⚠️ TARGET VERIFICATION / SECURITY PAGE"
             );
 
-        } finally {
-
-            checking = false;
+            return;
         }
+
+
+        // Look for Add to Cart first.
+
+        const button =
+            findAddToCart();
+
+
+        if (button) {
+
+            status(
+                "🟢 ADD TO CART FOUND"
+            );
+
+
+            if (!addedToCart) {
+
+                addedToCart = true;
+
+
+                setTimeout(
+                    () => {
+
+                        try {
+
+                            button.click();
+
+                            status(
+                                "🛒 ADDED TO CART — CHECKOUT MANUALLY"
+                            );
+
+                        } catch (error) {
+
+                            console.error(
+                                "[Pokémon Target]",
+                                error
+                            );
+
+                            addedToCart = false;
+
+                            status(
+                                "⚠️ CLICK FAILED — RETRYING"
+                            );
+
+                        }
+
+                    },
+                    100
+                );
+
+            }
+
+            return;
+        }
+
+
+        // Check whether Target has actually
+        // rendered product content.
+
+        if (
+            !productPageLoaded()
+        ) {
+
+            status(
+                "🟡 TARGET PRODUCT PAGE NOT LOADED"
+            );
+
+            return;
+        }
+
+
+        // Product exists but no purchase
+        // button is currently available.
+
+        const body =
+            document.body?.innerText
+                ?.toLowerCase() || "";
+
+
+        if (
+            body.includes("out of stock") ||
+            body.includes("sold out") ||
+            body.includes("currently unavailable")
+        ) {
+
+            status(
+                "🔴 PRODUCT LOADED — OUT OF STOCK"
+            );
+
+            return;
+        }
+
+
+        status(
+            "🟡 PRODUCT LOADED — WAITING FOR AVAILABILITY"
+        );
     }
 
-    // --------------------------------------------------
-    // MUTATION OBSERVER
-    // --------------------------------------------------
 
-    function watchPageChanges() {
+    // ---------------------------------------------
+    // OBSERVE TARGET'S DYNAMIC PAGE
+    // ---------------------------------------------
+
+    function startObserver() {
 
         const observer =
-            new MutationObserver(() => {
+            new MutationObserver(
+                () => {
 
-                if (!addedToCart) {
-                    checkPage();
+                    if (!addedToCart) {
+                        checkStock();
+                    }
+
                 }
+            );
 
-            });
 
         observer.observe(
-            document.body,
+            document.documentElement,
             {
                 childList: true,
                 subtree: true,
-                attributes: true,
-                attributeFilter: [
-                    "disabled",
-                    "aria-label",
-                    "class"
-                ]
+                characterData: true,
+                attributes: true
             }
         );
+
     }
 
-    // --------------------------------------------------
+
+    // ---------------------------------------------
     // START
-    // --------------------------------------------------
+    // ---------------------------------------------
 
     function start() {
 
         createStatus();
 
         status(
-            "🟡 Pokémon Target Monitor Active"
+            "🟡 TARGET MONITOR STARTED"
         );
 
-        watchPageChanges();
 
-        // Initial checks
-        checkPage();
+        startObserver();
 
-        // Backup polling
+
+        /*
+         * Continuous backup check.
+         */
+
         setInterval(
-            checkPage,
+            checkStock,
             CHECK_INTERVAL
         );
+
+
+        /*
+         * Initial check.
+         */
+
+        checkStock();
+
     }
 
-    // --------------------------------------------------
-    // WAIT FOR PAGE
-    // --------------------------------------------------
+
+    // ---------------------------------------------
+    // WAIT FOR DOCUMENT
+    // ---------------------------------------------
 
     if (
         document.readyState === "loading"
@@ -312,12 +438,15 @@
         document.addEventListener(
             "DOMContentLoaded",
             start,
-            { once: true }
+            {
+                once: true
+            }
         );
 
     } else {
 
         start();
+
     }
 
 })();
