@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      1.1
+// @version      1.2
 // @description  Target Pokemon stock and auto-add helper
 // @match        https://www.target.com/p/*
 // @updateURL    https://raw.githubusercontent.com/ruegercoder/Pokemon-restock-dashboard/main/target-auto-cart.user.js
@@ -13,5 +13,5 @@
 (function () {
     "use strict";
 
-    alert("✅ GITHUB VERSION 1.1 IS RUNNING");
+    alert("🚀 GITHUB VERSION 1.2 UPDATE WORKED");
 })();
