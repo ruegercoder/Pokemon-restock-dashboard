@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.0
-// @description  Detects Target stock and clicks Add to Cart when available.
+// @version      2.1
+// @description  TEST version for Target auto-add detection.
 // @match        https://www.target.com/p/*
 // @updateURL    https://raw.githubusercontent.com/ruegercoder/Pokemon-restock-dashboard/main/target-auto-cart.user.js
 // @downloadURL  https://raw.githubusercontent.com/ruegercoder/Pokemon-restock-dashboard/main/target-auto-cart.user.js
@@ -13,7 +13,7 @@
 (function () {
     "use strict";
 
-    const CHECK_INTERVAL = 2000;
+    const CHECK_INTERVAL = 1000;
     let addedToCart = false;
 
     function createStatusBox() {
@@ -37,7 +37,7 @@
             box-shadow: 0 4px 14px rgba(0,0,0,.3);
         `;
 
-        box.textContent = "🟡 Target: Checking stock...";
+        box.textContent = "🟡 TEST: Waiting...";
         document.body.appendChild(box);
     }
 
@@ -46,31 +46,48 @@
         if (box) box.textContent = text;
     }
 
-    function getVisibleButtons() {
-        return Array.from(document.querySelectorAll("button"))
-            .filter(button => button.offsetParent !== null);
+    function createFakeAddButton() {
+        if (document.getElementById("pokemon-test-add-button")) return;
+
+        const button = document.createElement("button");
+        button.id = "pokemon-test-add-button";
+        button.textContent = "🧪 Add to Cart — TEST";
+
+        button.style.cssText = `
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 999999;
+            background: #cc0000;
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            border-radius: 999px;
+            font-size: 18px;
+            font-weight: 700;
+        `;
+
+        button.addEventListener("click", () => {
+            button.textContent = "✅ TEST BUTTON CLICKED";
+        });
+
+        document.body.appendChild(button);
     }
 
     function findAddToCartButton() {
-        return getVisibleButtons().find(button => {
-            const text = (button.innerText || button.textContent || "")
-                .trim()
-                .toLowerCase();
+        return Array.from(document.querySelectorAll("button"))
+            .filter(button => button.offsetParent !== null)
+            .find(button => {
+                const text = (button.innerText || button.textContent || "")
+                    .trim()
+                    .toLowerCase();
 
-            return (
-                text.includes("add to cart") &&
-                !button.disabled
-            );
-        });
-    }
-
-    function pageLooksSoldOut() {
-        const pageText = document.body.innerText.toLowerCase();
-
-        return (
-            pageText.includes("sold out") ||
-            pageText.includes("out of stock")
-        );
+                return (
+                    text.includes("add to cart") &&
+                    !button.disabled
+                );
+            });
     }
 
     function checkStock() {
@@ -78,30 +95,23 @@
 
         const addButton = findAddToCartButton();
 
-        if (addButton) {
-            setStatus("🟢 Target: IN STOCK — Adding to cart");
-
-            addedToCart = true;
-
-            setTimeout(() => {
-                addButton.click();
-                setStatus("✅ Target: Add to Cart clicked");
-            }, 300);
-
+        if (!addButton) {
+            setStatus("🟡 TEST: Waiting for Add to Cart");
             return;
         }
 
-        if (pageLooksSoldOut()) {
-            setStatus("🔴 Target: Out of stock");
-            return;
-        }
+        setStatus("🟢 TEST: Add to Cart detected");
 
-        setStatus("🟡 Target: Checking stock...");
+        addedToCart = true;
+
+        setTimeout(() => {
+            addButton.click();
+            setStatus("✅ TEST PASSED — button clicked");
+        }, 500);
     }
 
     createStatusBox();
-
-    checkStock();
+    createFakeAddButton();
 
     setInterval(checkStock, CHECK_INTERVAL);
 })();
