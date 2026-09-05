@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.6.6-test
-// @description  Exact-product auto add with recommendation-card protection
+// @version      2.6.7-test
+// @description  Target-only scoped auto-add with safe manual test
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -22,6 +22,7 @@
     const CHECK_INTERVAL = 1500;
 
     let alreadyClicked = false;
+    let testMode = false;
 
     function createStatusBox() {
         let box = document.getElementById("pokemon-target-status");
@@ -37,14 +38,14 @@
                 transform: translateX(-50%);
                 z-index: 999999;
                 background: #111;
-                color: white;
-                padding: 14px 18px;
+                color: #fff;
+                padding: 12px 16px;
                 border-radius: 14px;
-                font-size: 16px;
+                font-size: 15px;
                 font-weight: bold;
+                font-family: Arial, sans-serif;
                 text-align: center;
-                max-width: 94%;
-                box-shadow: 0 4px 15px rgba(0,0,0,.35);
+                box-shadow: 0 4px 14px rgba(0,0,0,.25);
             `;
 
             document.body.appendChild(box);
@@ -53,305 +54,204 @@
         return box;
     }
 
-    function setStatus(text, background) {
-        const box = createStatusBox();
-        box.textContent = text;
-        box.style.background = background || "#111";
+    function setStatus(message) {
+        createStatusBox().textContent = message;
     }
 
-    function correctURL() {
-        return window.location.href.includes(TARGET_PRODUCT_ID);
-    }
+    function correctProductPage() {
+        const url = window.location.href.toLowerCase();
 
-    function isVisible(el) {
-        return !!(
-            el &&
-            el.offsetParent !== null
-        );
-    }
-
-    function textMatchesTarget(text) {
-        const t = (text || "").toLowerCase();
-
-        return REQUIRED_WORDS.every(word =>
-            t.includes(word.toLowerCase())
-        );
-    }
-
-    function findTargetTitleElement() {
-        const elements = Array.from(
-            document.querySelectorAll(
-                "h1, h2, h3, [data-test*='title']"
-            )
-        );
-
-        return elements.find(el => {
-            const text =
-                (el.innerText || el.textContent || "")
-                    .trim();
-
-            return (
-                isVisible(el) &&
-                textMatchesTarget(text)
-            );
-        });
-    }
-
-    function getAddToCartButtons() {
-        return Array.from(
-            document.querySelectorAll("button")
-        ).filter(button => {
-
-            const text =
-                (button.innerText || button.textContent || "")
-                    .trim()
-                    .toLowerCase();
-
-            return (
-                text === "add to cart" &&
-                !button.disabled &&
-                isVisible(button)
-            );
-        });
-    }
-
-    /*
-     * IMPORTANT:
-     *
-     * Recommendation cards usually contain a link
-     * to THEIR OWN Target product URL.
-     *
-     * We walk upward from the Add to Cart button.
-     *
-     * If we find another A- product ID surrounding
-     * that button, the button is rejected.
-     */
-    function buttonBelongsToDifferentProduct(button) {
-
-        let node = button;
-
-        for (let level = 0; level < 8 && node; level++) {
-
-            const links = node.querySelectorAll
-                ? Array.from(node.querySelectorAll("a[href*='/-/A-']"))
-                : [];
-
-            for (const link of links) {
-
-                const href =
-                    link.getAttribute("href") || "";
-
-                const match =
-                    href.match(/A-\d+/);
-
-                if (
-                    match &&
-                    match[0] !== TARGET_PRODUCT_ID
-                ) {
-                    return true;
-                }
-            }
-
-            node = node.parentElement;
-        }
-
-        return false;
-    }
-
-    /*
-     * Second lock:
-     *
-     * Make sure the button is reasonably close
-     * to the ACTUAL product heading.
-     *
-     * Recommendation Add to Cart buttons farther
-     * down the page are rejected.
-     */
-    function buttonNearTargetTitle(button, titleElement) {
-
-        if (!button || !titleElement) {
+        if (!url.includes(TARGET_PRODUCT_ID.toLowerCase())) {
             return false;
         }
 
-        const titleRect =
-            titleElement.getBoundingClientRect();
+        const pageText = (
+            document.querySelector("main")?.innerText ||
+            document.body.innerText ||
+            ""
+        ).toLowerCase();
 
-        const buttonRect =
-            button.getBoundingClientRect();
-
-        const distance =
-            Math.abs(
-                buttonRect.top - titleRect.bottom
-            );
-
-        /*
-         * Generous enough for Target's mobile
-         * product purchase area.
-         *
-         * Recommendation sections should normally
-         * be much farther away.
-         */
-        return distance < 900;
+        return REQUIRED_WORDS.every(word =>
+            pageText.includes(word)
+        );
     }
 
-    function findSafeAddButton(titleElement) {
+    function findMainProductArea() {
+        const main = document.querySelector("main");
 
-        const buttons =
-            getAddToCartButtons();
+        if (!main) return null;
 
-        for (const button of buttons) {
+        const headings = Array.from(
+            main.querySelectorAll("h1, h2, [data-test]")
+        );
 
-            /*
-             * LOCK A
-             *
-             * Never click a button that's inside
-             * another identifiable product card.
-             */
-            if (
-                buttonBelongsToDifferentProduct(button)
-            ) {
-                continue;
-            }
+        const matchingHeading = headings.find(el => {
+            const text = (el.innerText || el.textContent || "")
+                .toLowerCase();
 
-            /*
-             * LOCK B
-             *
-             * Must be near our actual product title.
-             */
-            if (
-                !buttonNearTargetTitle(
-                    button,
-                    titleElement
-                )
-            ) {
-                continue;
-            }
+            return REQUIRED_WORDS.every(word =>
+                text.includes(word)
+            );
+        });
 
-            return button;
+        if (!matchingHeading) {
+            return main;
         }
 
-        return null;
+        let container = matchingHeading;
+
+        for (let i = 0; i < 8 && container; i++) {
+            const text = (container.innerText || "")
+                .toLowerCase();
+
+            if (
+                text.includes("out of stock") ||
+                text.includes("add to cart") ||
+                text.includes("shipping") ||
+                text.includes("pickup")
+            ) {
+                return container;
+            }
+
+            container = container.parentElement;
+        }
+
+        return main;
     }
 
-    function checkProduct() {
+    function findTargetAddToCartButton() {
+        const productArea = findMainProductArea();
 
-        /*
-         * LOCK 1
-         * Exact product URL only.
-         */
-        if (!correctURL()) {
+        if (!productArea) return null;
 
-            alreadyClicked = false;
+        const buttons = Array.from(
+            productArea.querySelectorAll("button")
+        );
 
-            setStatus(
-                "⚪ WRONG PRODUCT — NOT MONITORING",
-                "#555"
+        return buttons.find(button => {
+            const text = (
+                button.innerText ||
+                button.textContent ||
+                ""
+            )
+                .trim()
+                .toLowerCase();
+
+            return (
+                text.includes("add to cart") &&
+                !button.disabled &&
+                button.offsetParent !== null
             );
+        }) || null;
+    }
 
-            return;
-        }
+    function productLooksSoldOut() {
+        const area = findMainProductArea();
 
-        /*
-         * LOCK 2
-         * Exact product title.
-         */
-        const titleElement =
-            findTargetTitleElement();
+        if (!area) return false;
 
-        if (!titleElement) {
+        const text = (
+            area.innerText ||
+            area.textContent ||
+            ""
+        ).toLowerCase();
 
-            setStatus(
-                "🔒 TARGET PRODUCT TITLE NOT FOUND",
-                "#8b0000"
-            );
+        return (
+            text.includes("out of stock") ||
+            text.includes("sold out")
+        );
+    }
 
+    function checkStock() {
+        if (!correctProductPage()) {
+            setStatus("⚪ WRONG PRODUCT — NOT ACTIVE");
             return;
         }
 
         if (alreadyClicked) {
+            setStatus("✅ ADD TO CART CLICKED");
             return;
         }
 
-        /*
-         * LOCK 3
-         * Search Add to Cart buttons,
-         * but reject recommendation products.
-         */
-        const addButton =
-            findSafeAddButton(titleElement);
+        const button = findTargetAddToCartButton();
 
-        if (!addButton) {
+        if (button) {
 
-            setStatus(
-                "🟡 CORRECT PRODUCT — SOLD OUT — WATCHING",
-                "#8a6d00"
-            );
-
-            return;
-        }
-
-        setStatus(
-            "🟢 SAFE ADD TO CART FOUND",
-            "#087f23"
-        );
-
-        /*
-         * Do the entire safety check AGAIN
-         * immediately before clicking.
-         */
-        setTimeout(() => {
-
-            const titleAgain =
-                findTargetTitleElement();
-
-            if (
-                !correctURL() ||
-                !titleAgain
-            ) {
-
-                setStatus(
-                    "🔒 SAFETY CHECK FAILED — NOT CLICKED",
-                    "#8b0000"
+            if (testMode) {
+                setStatus("🧪 TEST PASSED — CORRECT BUTTON FOUND");
+                console.log(
+                    "TEST MODE: Correct target Add to Cart button found.",
+                    button
                 );
 
+                testMode = false;
                 return;
             }
 
-            const buttonAgain =
-                findSafeAddButton(titleAgain);
-
-            if (!buttonAgain) {
-
-                setStatus(
-                    "🟡 SOLD OUT — WATCHING",
-                    "#8a6d00"
-                );
-
-                return;
-            }
+            setStatus("🟢 IN STOCK — ADDING TO CART");
 
             alreadyClicked = true;
 
-            buttonAgain.click();
+            button.click();
 
-            setStatus(
-                "🔵 TARGET PRODUCT — ADD CLICKED",
-                "#0057a8"
+            console.log(
+                "Target Pokemon Auto Add: clicked target product button."
             );
 
-        }, 300);
+            return;
+        }
+
+        if (productLooksSoldOut()) {
+            setStatus("🟡 SOLD OUT — WATCHING");
+        } else {
+            setStatus("🔎 WATCHING TARGET PRODUCT");
+        }
     }
 
-    setStatus(
-        "🟡 2.6.6 STARTING...",
-        "#8a6d00"
-    );
+    function createTestButton() {
+        if (document.getElementById("pokemon-test-button")) {
+            return;
+        }
 
-    checkProduct();
+        const button = document.createElement("button");
 
-    setInterval(
-        checkProduct,
-        CHECK_INTERVAL
-    );
+        button.id = "pokemon-test-button";
+        button.textContent = "🧪 TEST TARGET";
+
+        button.style.cssText = `
+            position: fixed;
+            bottom: 25px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 999999;
+            background: #fff;
+            color: #111;
+            border: 2px solid #111;
+            padding: 12px 18px;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: bold;
+            font-family: Arial, sans-serif;
+        `;
+
+        button.addEventListener("click", () => {
+            testMode = true;
+
+            setStatus("🧪 TESTING TARGET PRODUCT");
+
+            checkStock();
+        });
+
+        document.body.appendChild(button);
+    }
+
+    createStatusBox();
+    createTestButton();
+
+    setStatus("🔎 STARTING TARGET WATCH");
+
+    checkStock();
+
+    setInterval(checkStock, CHECK_INTERVAL);
 
 })();
