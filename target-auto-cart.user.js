@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.6.2-test
-// @description  Target-specific auto-add diagnostic with product lock
+// @version      2.6.3-test
+// @description  Auto-add diagnostic with URL + product-name safety lock
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -12,6 +12,14 @@
     "use strict";
 
     const TARGET_PRODUCT_ID = "A-1010892076";
+
+    // Text that MUST appear on the displayed product.
+    const PRODUCT_KEYWORDS = [
+        "30th",
+        "celebration",
+        "elite trainer box"
+    ];
+
     const CHECK_INTERVAL = 1500;
 
     let addClicked = false;
@@ -48,21 +56,37 @@
 
     function setStatus(text, background = "#111") {
         const box = createStatusBox();
+
         box.textContent = text;
         box.style.background = background;
     }
 
-    function isCorrectProduct() {
+    function correctURL() {
         return window.location.href.includes(TARGET_PRODUCT_ID);
     }
 
+    function correctDisplayedProduct() {
+        const pageText =
+            (document.body.innerText || "")
+                .toLowerCase();
+
+        return PRODUCT_KEYWORDS.every(keyword =>
+            pageText.includes(keyword.toLowerCase())
+        );
+    }
+
     function findAddToCartButton() {
-        const buttons = Array.from(document.querySelectorAll("button"));
+        const buttons =
+            Array.from(document.querySelectorAll("button"));
 
         return buttons.find(button => {
-            const text = (button.innerText || button.textContent || "")
-                .trim()
-                .toLowerCase();
+
+            const text =
+                (button.innerText ||
+                 button.textContent ||
+                 "")
+                    .trim()
+                    .toLowerCase();
 
             return (
                 text.includes("add to cart") &&
@@ -74,9 +98,23 @@
 
     function checkProduct() {
 
-        // ABSOLUTE SAFETY LOCK
-        if (!isCorrectProduct()) {
-            setStatus("⚪ WRONG PRODUCT — NOT MONITORING", "#555");
+        // LOCK #1 — URL
+        if (!correctURL()) {
+            setStatus(
+                "⚪ WRONG URL — DO NOT CLICK",
+                "#555"
+            );
+
+            return;
+        }
+
+        // LOCK #2 — DISPLAYED PRODUCT
+        if (!correctDisplayedProduct()) {
+            setStatus(
+                "🔒 WRONG PRODUCT — DO NOT CLICK",
+                "#8b0000"
+            );
+
             return;
         }
 
@@ -84,26 +122,64 @@
             return;
         }
 
-        const addButton = findAddToCartButton();
+        const addButton =
+            findAddToCartButton();
 
         if (!addButton) {
-            setStatus("🟡 SOLD OUT — WATCHING", "#8a6d00");
+            setStatus(
+                "🟡 CORRECT PRODUCT — WATCHING",
+                "#8a6d00"
+            );
+
             return;
         }
 
-        setStatus("🟢 ADD TO CART FOUND", "#087f23");
+        setStatus(
+            "🟢 CORRECT PRODUCT — ADD FOUND",
+            "#087f23"
+        );
 
         addClicked = true;
 
         setTimeout(() => {
+
+            // Check BOTH locks again immediately
+            // before the actual click.
+
+            if (
+                !correctURL() ||
+                !correctDisplayedProduct()
+            ) {
+                addClicked = false;
+
+                setStatus(
+                    "🔒 SAFETY CHECK FAILED — NOT CLICKED",
+                    "#8b0000"
+                );
+
+                return;
+            }
+
             addButton.click();
-            setStatus("🔵 ADD CLICKED — VERIFYING CART", "#0057a8");
+
+            setStatus(
+                "🔵 ADD CLICKED — VERIFYING CART",
+                "#0057a8"
+            );
+
         }, 300);
     }
 
-    setStatus("🟡 STARTING MONITOR...", "#8a6d00");
+    setStatus(
+        "🟡 STARTING 2.6.3 TEST...",
+        "#8a6d00"
+    );
 
     checkProduct();
 
-    setInterval(checkProduct, CHECK_INTERVAL);
+    setInterval(
+        checkProduct,
+        CHECK_INTERVAL
+    );
+
 })();
