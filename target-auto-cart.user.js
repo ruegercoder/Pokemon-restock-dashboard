@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.1
+// @version      2.2
 // @description  TEST version for Target auto-add detection.
 // @match        https://www.target.com/p/*
 // @updateURL    https://raw.githubusercontent.com/ruegercoder/Pokemon-restock-dashboard/main/target-auto-cart.user.js
@@ -43,13 +43,16 @@
 
     function setStatus(text) {
         const box = document.getElementById("pokemon-target-status");
-        if (box) box.textContent = text;
+        if (box) {
+            box.textContent = text;
+        }
     }
 
     function createFakeAddButton() {
         if (document.getElementById("pokemon-test-add-button")) return;
 
         const button = document.createElement("button");
+
         button.id = "pokemon-test-add-button";
         button.textContent = "🧪 Add to Cart — TEST";
 
@@ -69,19 +72,30 @@
         `;
 
         button.addEventListener("click", () => {
-            button.textContent = "✅ TEST BUTTON CLICKED";
+            console.log("✅ Fake Add to Cart button was clicked");
+
+            // IMPORTANT:
+            // Keep "Add to Cart" in the text so our detector
+            // can still recognize this as the fake test button.
+            button.textContent = "✅ Add to Cart — TEST CLICKED";
         });
 
         document.body.appendChild(button);
     }
 
     function findAddToCartButton() {
-        return Array.from(document.querySelectorAll("button"))
+        const buttons = Array.from(
+            document.querySelectorAll("button")
+        );
+
+        return buttons
             .filter(button => button.offsetParent !== null)
             .find(button => {
-                const text = (button.innerText || button.textContent || "")
-                    .trim()
-                    .toLowerCase();
+
+                const text =
+                    (button.innerText || button.textContent || "")
+                        .trim()
+                        .toLowerCase();
 
                 return (
                     text.includes("add to cart") &&
@@ -91,27 +105,56 @@
     }
 
     function checkStock() {
-        if (addedToCart) return;
+
+        if (addedToCart) {
+            return;
+        }
 
         const addButton = findAddToCartButton();
 
         if (!addButton) {
-            setStatus("🟡 TEST: Waiting for Add to Cart");
+            setStatus(
+                "🟡 TEST: Waiting for Add to Cart"
+            );
+
             return;
         }
 
-        setStatus("🟢 TEST: Add to Cart detected");
+        setStatus(
+            "🟢 TEST: Add to Cart detected"
+        );
+
+        console.log(
+            "🟢 Add to Cart button detected:",
+            addButton
+        );
 
         addedToCart = true;
 
         setTimeout(() => {
+
             addButton.click();
-            setStatus("✅ TEST PASSED — button clicked");
-        }, 500);
+
+            setStatus(
+                "✅ TEST PASSED — AUTO CLICK WORKED"
+            );
+
+            console.log(
+                "✅ AUTO CLICK TEST PASSED"
+            );
+
+        }, 1000);
     }
 
     createStatusBox();
+
     createFakeAddButton();
 
-    setInterval(checkStock, CHECK_INTERVAL);
+    setInterval(
+        checkStock,
+        CHECK_INTERVAL
+    );
+
+    checkStock();
+
 })();
