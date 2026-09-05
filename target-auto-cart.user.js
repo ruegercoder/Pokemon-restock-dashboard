@@ -1,11 +1,9 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.5
-// @description  Watches Target product page and clicks the real Add to Cart button when available.
+// @version      2.6
+// @description  Watches Target Pokemon product pages, auto-clicks Add to Cart, and verifies cart success.
 // @match        https://www.target.com/p/*
-// @updateURL    https://raw.githubusercontent.com/ruegercoder/Pokemon-restock-dashboard/main/target-auto-cart.user.js
-// @downloadURL  https://raw.githubusercontent.com/ruegercoder/Pokemon-restock-dashboard/main/target-auto-cart.user.js
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -13,203 +11,220 @@
 (function () {
     "use strict";
 
-    const CHECK_INTERVAL = 1000;
+    const CHECK_INTERVAL = 1500;
+    const VERIFY_TIMEOUT = 12000;
 
-    let addedToCart = false;
-    let checkTimer = null;
+    let addClicked = false;
+    let verifyingCart = false;
 
-    function createStatusBox() {
+    function getStatusBox() {
         let box = document.getElementById("pokemon-target-status");
 
-        if (box) return box;
+        if (!box) {
+            box = document.createElement("div");
+            box.id = "pokemon-target-status";
 
-        box = document.createElement("div");
-        box.id = "pokemon-target-status";
+            box.style.cssText = `
+                position: fixed;
+                top: 15px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 999999;
+                background: #111;
+                color: white;
+                padding: 12px 18px;
+                border-radius: 14px;
+                font-family: Arial, sans-serif;
+                font-size: 15px;
+                font-weight: 700;
+                text-align: center;
+                box-shadow: 0 4px 14px rgba(0,0,0,.35);
+                max-width: 90%;
+            `;
 
-        box.style.cssText = `
-            position: fixed;
-            top: 90px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 999999;
-            background: #111;
-            color: white;
-            padding: 12px 16px;
-            border-radius: 14px;
-            font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
-            font-size: 16px;
-            font-weight: 600;
-            box-shadow: 0 4px 14px rgba(0,0,0,.3);
-            max-width: 90%;
-            text-align: center;
-        `;
-
-        box.textContent = "🔵 Target watcher starting...";
-
-        document.body.appendChild(box);
+            document.body.appendChild(box);
+        }
 
         return box;
     }
 
-    function setStatus(text) {
-        const box = createStatusBox();
-        box.textContent = text;
+    function setStatus(message) {
+        const box = getStatusBox();
+        box.textContent = message;
+        console.log("[Pokemon Auto Add]", message);
     }
 
-    function normalizeText(element) {
-        return (
-            element.innerText ||
-            element.textContent ||
-            ""
-        )
-            .replace(/\s+/g, " ")
-            .trim()
-            .toLowerCase();
-    }
+    function visible(element) {
+        if (!element) return false;
 
-    function isVisible(element) {
         const style = window.getComputedStyle(element);
         const rect = element.getBoundingClientRect();
 
         return (
             style.display !== "none" &&
             style.visibility !== "hidden" &&
-            style.opacity !== "0" &&
             rect.width > 0 &&
             rect.height > 0
         );
     }
 
-    function findRealAddToCartButton() {
+    function findAddToCartButton() {
         const buttons = Array.from(
             document.querySelectorAll("button")
         );
 
-        const candidates = buttons.filter(button => {
-            const text = normalizeText(button);
-
-            const isAddToCart =
-                text === "add to cart" ||
-                text.startsWith("add to cart ");
+        return buttons.find(button => {
+            const text = (
+                button.innerText ||
+                button.textContent ||
+                ""
+            )
+                .trim()
+                .toLowerCase();
 
             return (
-                isAddToCart &&
+                text.includes("add to cart") &&
                 !button.disabled &&
-                isVisible(button) &&
-                button.id !== "pokemon-test-add-button"
+                visible(button)
             );
         });
-
-        if (candidates.length === 0) {
-            return null;
-        }
-
-        /*
-         * Target can sometimes render more than one Add to Cart
-         * button on a page. Prefer the one appearing earliest
-         * in the actual product page.
-         */
-        candidates.sort((a, b) => {
-            const aY =
-                a.getBoundingClientRect().top +
-                window.scrollY;
-
-            const bY =
-                b.getBoundingClientRect().top +
-                window.scrollY;
-
-            return aY - bY;
-        });
-
-        return candidates[0];
     }
 
-    function pageSaysSoldOut() {
-        const pageText = (
-            document.body.innerText || ""
-        ).toLowerCase();
+    function pageLooksSoldOut() {
+        const text = document.body.innerText.toLowerCase();
 
         return (
-            pageText.includes("sold out") ||
-            pageText.includes("out of stock")
+            text.includes("out of stock") ||
+            text.includes("sold out") ||
+            text.includes("currently unavailable")
         );
     }
 
-    function checkStock() {
-        if (addedToCart) {
-            return;
-        }
+    function cartSuccessDetected() {
+        const bodyText = document.body.innerText.toLowerCase();
 
-        const addButton =
-            findRealAddToCartButton();
+        // Target may change the button text after adding.
+        const buttonTexts = Array.from(
+            document.querySelectorAll("button")
+        ).map(button =>
+            (
+                button.innerText ||
+                button.textContent ||
+                ""
+            )
+                .trim()
+                .toLowerCase()
+        );
 
-        if (!addButton) {
+        const successText =
+            bodyText.includes("added to cart") ||
+            bodyText.includes("added to your cart") ||
+            bodyText.includes("view cart") ||
+            bodyText.includes("go to cart");
 
-            if (pageSaysSoldOut()) {
-                setStatus(
-                    "🟡 SOLD OUT — WATCHING"
+        const successButton = buttonTexts.some(text =>
+            text.includes("view cart") ||
+            text.includes("go to cart") ||
+            text.includes("added to cart")
+        );
+
+        return successText || successButton;
+    }
+
+    function verifyCart() {
+        if (verifyingCart) return;
+
+        verifyingCart = true;
+
+        setStatus("🔵 ADD CLICKED — VERIFYING CART");
+
+        const started = Date.now();
+
+        const verifyTimer = setInterval(() => {
+            if (cartSuccessDetected()) {
+                clearInterval(verifyTimer);
+
+                setStatus("✅ ADDED TO CART — READY TO BUY");
+
+                console.log(
+                    "[Pokemon Auto Add] Cart verification successful."
                 );
-            } else {
-                setStatus(
-                    "🟡 WATCHING FOR ADD TO CART"
-                );
+
+                return;
             }
 
+            if (Date.now() - started >= VERIFY_TIMEOUT) {
+                clearInterval(verifyTimer);
+
+                verifyingCart = false;
+                addClicked = false;
+
+                setStatus(
+                    "🟠 CLICK SENT — CART NOT CONFIRMED"
+                );
+
+                console.log(
+                    "[Pokemon Auto Add] Cart verification timed out."
+                );
+            }
+        }, 500);
+    }
+
+    function attemptAdd() {
+        if (addClicked || verifyingCart) {
             return;
         }
 
-        setStatus(
-            "🟢 ADD TO CART DETECTED"
-        );
+        const addButton = findAddToCartButton();
 
-        console.log(
-            "🟢 Real Target Add to Cart button detected:",
-            addButton
-        );
+        if (addButton) {
+            addClicked = true;
 
-        addedToCart = true;
+            setStatus("🟢 IN STOCK — ADDING TO CART");
 
-        /*
-         * Stop the watcher so we don't click twice.
-         */
-        if (checkTimer) {
-            clearInterval(checkTimer);
-        }
-
-        setTimeout(() => {
-
-            setStatus(
-                "🔵 ADDING TO CART..."
+            console.log(
+                "[Pokemon Auto Add] Add to Cart button found:",
+                addButton
             );
 
             addButton.click();
 
-            setTimeout(() => {
+            setTimeout(verifyCart, 500);
 
-                setStatus(
-                    "✅ ADD TO CART CLICKED"
-                );
+            return;
+        }
 
-                console.log(
-                    "✅ Target Add to Cart button clicked automatically."
-                );
-
-            }, 500);
-
-        }, 300);
+        if (pageLooksSoldOut()) {
+            setStatus("🟡 SOLD OUT — WATCHING");
+        } else {
+            setStatus("🔎 WATCHING FOR STOCK");
+        }
     }
 
-    createStatusBox();
+    function startWatcher() {
+        setStatus("🔎 TARGET WATCHER ACTIVE");
 
-    setStatus(
-        "🟡 WATCHING TARGET..."
-    );
+        attemptAdd();
 
-    checkStock();
+        setInterval(attemptAdd, CHECK_INTERVAL);
 
-    checkTimer = setInterval(
-        checkStock,
-        CHECK_INTERVAL
-    );
+        const observer = new MutationObserver(() => {
+            attemptAdd();
+        });
 
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+            attributes: true
+        });
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener(
+            "DOMContentLoaded",
+            startWatcher
+        );
+    } else {
+        startWatcher();
+    }
 })();
