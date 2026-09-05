@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.2
+// @version      2.3
 // @description  TEST version for Target auto-add detection.
 // @match        https://www.target.com/p/*
 // @updateURL    https://raw.githubusercontent.com/ruegercoder/Pokemon-restock-dashboard/main/target-auto-cart.user.js
