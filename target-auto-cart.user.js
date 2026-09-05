@@ -212,11 +212,10 @@
             attemptAdd();
         });
 
-        observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true,
-            attributes: true
-        });
+        observer.observe(document.body, {
+    childList: true,
+    subtree: true
+});
     }
 
     if (document.readyState === "loading") {
