@@ -257,7 +257,7 @@ jobs:
                 method: "POST",
 
                 headers: {
-                  "Title":  "TARGET POKÉMON RESTOCK",
+                  "Title":  "TARGET POKEMON RESTOCK",
                   "Priority": "urgent",
                   "Tags": "rotating_light,pokemon",
                   "Click": url
