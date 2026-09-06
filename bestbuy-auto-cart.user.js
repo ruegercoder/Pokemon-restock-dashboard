@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Best Buy Pokemon Auto Add - HARDENED LIVE
+// @name         Best Buy Pokemon Auto Add - LIVE
 // @namespace    pokemon-restock-dashboard
-// @version      1.1.0
-// @description  Hardened Best Buy Pokemon watcher - exact product and purchase-area targeting
+// @version      1.2.0
+// @description  Best Buy Pokemon exact-product auto add with hardened purchase-control targeting
 // @match        https://www.bestbuy.com/product/*
 // @grant        none
 // @run-at       document-idle
@@ -12,7 +12,7 @@
     "use strict";
 
     // ============================================================
-    // PRODUCT SAFETY LOCK
+    // TARGET PRODUCT
     // ============================================================
 
     const TARGET_SKU = "6685563";
@@ -24,27 +24,27 @@
         "ultra-premium collection"
     ];
 
-    const CHECK_INTERVAL = 1500;
+    const CHECK_INTERVAL = 1200;
     const CLICK_COOLDOWN = 2500;
 
+    let lastStatus = "";
     let lastClickTime = 0;
     let clickCount = 0;
-    let finished = false;
-    let lastStatus = "";
+    let stopped = false;
 
     // ============================================================
-    // HELPERS
+    // TEXT HELPERS
     // ============================================================
 
-    function normalize(text) {
+    function clean(text) {
         return (text || "")
             .replace(/\s+/g, " ")
             .trim()
             .toLowerCase();
     }
 
-    function pageText() {
-        return normalize(document.body?.innerText || "");
+    function getPageText() {
+        return clean(document.body?.innerText || "");
     }
 
     // ============================================================
@@ -63,16 +63,16 @@
                 top: 15px;
                 left: 50%;
                 transform: translateX(-50%);
-                z-index: 9999999;
-                background: #222;
-                color: #fff;
+                z-index: 99999999;
+                background: #8a6d00;
+                color: white;
                 padding: 12px 18px;
                 border-radius: 16px;
                 font-size: 16px;
                 font-weight: 800;
                 text-align: center;
                 max-width: 86vw;
-                box-shadow: 0 4px 14px rgba(0,0,0,.28);
+                box-shadow: 0 4px 14px rgba(0,0,0,.30);
                 pointer-events: none;
             `;
 
@@ -82,7 +82,7 @@
         return box;
     }
 
-    function setStatus(text, color = "#222") {
+    function setStatus(text, color = "#8a6d00") {
         if (lastStatus === text) return;
 
         lastStatus = text;
@@ -95,77 +95,63 @@
     }
 
     // ============================================================
-    // VERIFY EXACT PRODUCT
+    // PRODUCT SAFETY LOCK
     // ============================================================
 
-    function correctProductPage() {
-        const text = pageText();
+    function correctProduct() {
+        const text = getPageText();
         const url = location.href.toLowerCase();
 
-        const skuFound =
+        const skuMatches =
             text.includes(TARGET_SKU) ||
             url.includes(TARGET_SKU);
 
-        if (!skuFound) {
+        if (!skuMatches) {
             return false;
         }
 
         return REQUIRED_WORDS.every(word =>
-            text.includes(word.toLowerCase())
+            text.includes(word)
         );
     }
 
     // ============================================================
-    // DETECT WHETHER THIS BUTTON BELONGS TO MAIN PURCHASE AREA
+    // FIND FULFILLMENT AREA
     // ============================================================
 
-    function isPurchaseAreaControl(element) {
-        let node = element;
+    function findFulfillmentAnchors() {
+        const elements = [
+            ...document.querySelectorAll("div, span, p, li")
+        ];
 
-        /*
-         * Walk upward through the element's containers.
-         * The real Best Buy purchase area we tested contains
-         * fulfillment language such as Pickup / Shipping.
-         */
+        return elements.filter(el => {
+            const text = clean(el.innerText || el.textContent || "");
 
-        for (let i = 0; i < 8 && node; i++) {
-            const text = normalize(node.innerText || "");
+            // Ignore giant page-level containers.
+            if (text.length > 140) return false;
 
-            const hasFulfillment =
-                (
-                    text.includes("pickup") &&
-                    text.includes("shipping")
-                );
-
-            const hasRelevantStatus =
-                text.includes("coming soon") ||
-                text.includes("add to cart");
-
-            if (hasFulfillment && hasRelevantStatus) {
-                return true;
-            }
-
-            node = node.parentElement;
-        }
-
-        return false;
+            return (
+                text.includes("pickup") ||
+                text.includes("shipping")
+            );
+        });
     }
 
     // ============================================================
-    // FIND ONLY THE VERIFIED PURCHASE CONTROL
+    // FIND REAL PRODUCT PURCHASE CONTROL
     // ============================================================
 
     function findPurchaseControl() {
-        const candidates = [
+        const controls = [
             ...document.querySelectorAll(
                 "button, [role='button']"
             )
         ];
 
-        for (const el of candidates) {
-            if (!el.isConnected) continue;
+        const candidates = controls.filter(el => {
+            if (!el.isConnected) return false;
 
-            const text = normalize(
+            const text = clean(
                 el.innerText ||
                 el.textContent ||
                 el.getAttribute("aria-label")
@@ -175,65 +161,115 @@
                 text !== "coming soon" &&
                 text !== "add to cart"
             ) {
-                continue;
+                return false;
             }
 
             const rect = el.getBoundingClientRect();
 
-            // Reject tiny/icon controls.
-            if (
-                rect.width < 180 ||
-                rect.height < 35
-            ) {
-                continue;
+            // Must actually look like the large Best Buy purchase button.
+            if (rect.width < window.innerWidth * 0.65) {
+                return false;
             }
 
-            // HARD LOCK:
-            // Button must live inside the fulfillment/purchase area.
-            if (!isPurchaseAreaControl(el)) {
-                continue;
+            if (rect.height < 38) {
+                return false;
             }
 
-            return el;
+            return true;
+        });
+
+        if (!candidates.length) {
+            return null;
+        }
+
+        // --------------------------------------------------------
+        // If only one large exact purchase control exists,
+        // that is almost certainly our verified control.
+        // --------------------------------------------------------
+
+        if (candidates.length === 1) {
+            return candidates[0];
+        }
+
+        // --------------------------------------------------------
+        // If multiple exist, choose the one physically closest
+        // to Pickup / Shipping information.
+        // --------------------------------------------------------
+
+        const anchors = findFulfillmentAnchors();
+
+        let bestCandidate = null;
+        let bestDistance = Infinity;
+
+        for (const candidate of candidates) {
+            const buttonRect =
+                candidate.getBoundingClientRect();
+
+            const buttonCenterY =
+                buttonRect.top +
+                window.scrollY +
+                buttonRect.height / 2;
+
+            for (const anchor of anchors) {
+                const anchorRect =
+                    anchor.getBoundingClientRect();
+
+                const anchorCenterY =
+                    anchorRect.top +
+                    window.scrollY +
+                    anchorRect.height / 2;
+
+                const distance =
+                    Math.abs(buttonCenterY - anchorCenterY);
+
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestCandidate = candidate;
+                }
+            }
+        }
+
+        // The real purchase button should be reasonably close
+        // to the fulfillment section.
+        if (
+            bestCandidate &&
+            bestDistance < 700
+        ) {
+            return bestCandidate;
         }
 
         return null;
     }
 
     // ============================================================
-    // CART CONFIRMATION
+    // CART SUCCESS DETECTION
     // ============================================================
 
-    function itemAppearsInCart() {
-        const text = pageText();
+    function cartSuccessDetected() {
+        const text = getPageText();
 
-        const confirmationPhrases = [
-            "added to cart",
-            "added to your cart",
-            "view cart",
-            "go to cart"
-        ];
-
-        return confirmationPhrases.some(phrase =>
-            text.includes(phrase)
-        );
-    }
-
-    // ============================================================
-    // CLICK SAFETY
-    // ============================================================
-
-    function canClickNow() {
         return (
-            Date.now() - lastClickTime >= CLICK_COOLDOWN
+            text.includes("added to cart") ||
+            text.includes("added to your cart")
         );
     }
 
-    function clickPurchaseControl(control) {
-        if (!canClickNow()) return;
+    // ============================================================
+    // SAFE CLICK
+    // ============================================================
 
-        // Re-check immediately before clicking.
-        const text = normalize(
+    function clickAddToCart(control) {
+        const now = Date.now();
+
+        if (
+            now - lastClickTime <
+            CLICK_COOLDOWN
+        ) {
+            return;
+        }
+
+        // Re-check exact text immediately before click.
+        const text = clean(
             control.innerText ||
             control.textContent ||
             control.getAttribute("aria-label")
@@ -243,26 +279,33 @@
             return;
         }
 
-        if (!isPurchaseAreaControl(control)) {
+        // Re-run targeting immediately before clicking.
+        const verifiedControl =
+            findPurchaseControl();
+
+        if (
+            !verifiedControl ||
+            verifiedControl !== control
+        ) {
             setStatus(
-                "🔴 SAFETY LOCK — CONTROL MOVED",
-                "#9d1c1c"
+                "🔴 SAFETY LOCK — BUTTON NOT VERIFIED",
+                "#9b1c1c"
             );
 
             return;
         }
 
-        lastClickTime = Date.now();
+        lastClickTime = now;
         clickCount++;
 
         setStatus(
-            `🟢 ADD TO CART — CLICKING ${clickCount}`,
+            `🟢 ADD TO CART FOUND — CLICKING ${clickCount}`,
             "#26732b"
         );
 
         control.scrollIntoView({
-            block: "center",
-            behavior: "instant"
+            behavior: "instant",
+            block: "center"
         });
 
         control.click();
@@ -273,31 +316,30 @@
     // ============================================================
 
     function checkProduct() {
-        if (finished) return;
+        if (stopped) return;
 
         // --------------------------------------------------------
-        // SAFETY LOCK #1
-        // Exact product
+        // WRONG PRODUCT = NEVER CLICK
         // --------------------------------------------------------
 
-        if (!correctProductPage()) {
+        if (!correctProduct()) {
             setStatus(
                 "🔴 SAFETY LOCK — WRONG PRODUCT",
-                "#9d1c1c"
+                "#9b1c1c"
             );
 
             return;
         }
 
         // --------------------------------------------------------
-        // Already successfully added
+        // CART SUCCESS
         // --------------------------------------------------------
 
-        if (itemAppearsInCart()) {
-            finished = true;
+        if (cartSuccessDetected()) {
+            stopped = true;
 
             setStatus(
-                "✅ ITEM APPEARS IN CART — STOPPED",
+                "✅ ADDED TO CART — STOPPED",
                 "#26732b"
             );
 
@@ -305,10 +347,11 @@
         }
 
         // --------------------------------------------------------
-        // Find exact verified purchase control
+        // FIND EXACT PURCHASE CONTROL
         // --------------------------------------------------------
 
-        const control = findPurchaseControl();
+        const control =
+            findPurchaseControl();
 
         if (!control) {
             setStatus(
@@ -319,14 +362,14 @@
             return;
         }
 
-        const text = normalize(
+        const text = clean(
             control.innerText ||
             control.textContent ||
             control.getAttribute("aria-label")
         );
 
         // --------------------------------------------------------
-        // Coming Soon
+        // COMING SOON
         // --------------------------------------------------------
 
         if (text === "coming soon") {
@@ -339,17 +382,13 @@
         }
 
         // --------------------------------------------------------
-        // Add to Cart
+        // ADD TO CART
         // --------------------------------------------------------
 
         if (text === "add to cart") {
-            clickPurchaseControl(control);
+            clickAddToCart(control);
             return;
         }
-
-        // --------------------------------------------------------
-        // Anything unexpected
-        // --------------------------------------------------------
 
         setStatus(
             "🟡 WATCHING",
@@ -366,7 +405,10 @@
         "#8a6d00"
     );
 
-    setTimeout(checkProduct, 1000);
+    setTimeout(
+        checkProduct,
+        800
+    );
 
     setInterval(
         checkProduct,
