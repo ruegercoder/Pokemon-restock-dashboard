@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Best Buy Pokemon Auto Add - SAFE TEST
 // @namespace    pokemon-restock-dashboard
-// @version      1.0.0-test
-// @description  SAFE TEST: Finds and highlights the correct Best Buy Add to Cart button without clicking it.
+// @version      1.0.1-test
+// @description  SAFE TEST: Locks onto the correct Best Buy product area and identifies the exact Add to Cart button without clicking.
 // @match        https://www.bestbuy.com/product/*
 // @grant        none
 // @run-at       document-idle
@@ -10,10 +10,6 @@
 
 (function () {
     "use strict";
-
-    // ============================================================
-    // TARGET PRODUCT
-    // ============================================================
 
     const TARGET_SKU = "6685563";
 
@@ -24,7 +20,7 @@
 
     const CHECK_INTERVAL = 1500;
 
-    let lastHighlightedButton = null;
+    let highlightedElement = null;
 
     // ============================================================
     // STATUS BOX
@@ -68,44 +64,49 @@
     }
 
     // ============================================================
-    // PRODUCT SAFETY CHECKS
+    // HELPERS
     // ============================================================
 
+    function cleanText(element) {
+        return (
+            element?.innerText ||
+            element?.textContent ||
+            ""
+        ).toLowerCase();
+    }
+
     function pageMatchesTargetProduct() {
-        const text = document.body.innerText.toLowerCase();
+        const pageText = cleanText(document.body);
 
         const skuMatches =
-            text.includes(`sku: ${TARGET_SKU}`) ||
-            text.includes(`sku ${TARGET_SKU}`) ||
+            pageText.includes(`sku: ${TARGET_SKU}`) ||
+            pageText.includes(`sku ${TARGET_SKU}`) ||
             window.location.href.includes(TARGET_SKU);
 
         const wordsMatch = REQUIRED_WORDS.every(word =>
-            text.includes(word.toLowerCase())
+            pageText.includes(word)
         );
 
         return skuMatches && wordsMatch;
     }
 
     // ============================================================
-    // BUTTON FINDER
+    // FIND PRODUCT AREA
     // ============================================================
 
-    function findCorrectAddToCartButton() {
-        const buttons = Array.from(document.querySelectorAll("button"));
-
-        const candidates = buttons.filter(button => {
-            const text = (
-                button.innerText ||
-                button.textContent ||
-                ""
+    function findProductArea() {
+        const allElements = Array.from(
+            document.querySelectorAll(
+                "main, section, article, div"
             )
-                .trim()
-                .toLowerCase();
+        );
+
+        const candidates = allElements.filter(element => {
+            const text = cleanText(element);
 
             return (
-                text.includes("add to cart") &&
-                !button.disabled &&
-                button.offsetParent !== null
+                text.includes(TARGET_SKU) &&
+                REQUIRED_WORDS.every(word => text.includes(word))
             );
         });
 
@@ -113,56 +114,59 @@
             return null;
         }
 
-        // Extra safety:
-        // Prefer a button whose nearby container contains the target product info.
-        for (const button of candidates) {
-            let node = button;
+        // Prefer the smallest matching container.
+        candidates.sort((a, b) => {
+            return a.querySelectorAll("*").length -
+                   b.querySelectorAll("*").length;
+        });
 
-            for (let i = 0; i < 8 && node; i++) {
-                const nearbyText = (
-                    node.innerText ||
-                    node.textContent ||
-                    ""
-                ).toLowerCase();
+        return candidates[0];
+    }
 
-                if (
-                    nearbyText.includes(TARGET_SKU) ||
-                    REQUIRED_WORDS.some(word =>
-                        nearbyText.includes(word.toLowerCase())
-                    )
-                ) {
-                    return button;
-                }
+    // ============================================================
+    // FIND BUTTON INSIDE PRODUCT AREA ONLY
+    // ============================================================
 
-                node = node.parentElement;
-            }
-        }
+    function findAddToCartInside(productArea) {
+        if (!productArea) return null;
 
-        // DO NOT return the first generic Add to Cart button.
-        return null;
+        const buttons = Array.from(
+            productArea.querySelectorAll("button")
+        );
+
+        return buttons.find(button => {
+            const text = cleanText(button).trim();
+
+            return (
+                text.includes("add to cart") &&
+                !button.disabled &&
+                button.offsetParent !== null
+            );
+        }) || null;
     }
 
     // ============================================================
     // HIGHLIGHT
     // ============================================================
 
-    function clearOldHighlight() {
-        if (lastHighlightedButton) {
-            lastHighlightedButton.style.outline = "";
-            lastHighlightedButton.style.outlineOffset = "";
-            lastHighlightedButton = null;
-        }
+    function clearHighlight() {
+        if (!highlightedElement) return;
+
+        highlightedElement.style.outline = "";
+        highlightedElement.style.outlineOffset = "";
+
+        highlightedElement = null;
     }
 
-    function highlightButton(button) {
-        clearOldHighlight();
+    function highlight(element, color) {
+        clearHighlight();
 
-        button.style.outline = "5px solid lime";
-        button.style.outlineOffset = "4px";
+        element.style.outline = `5px solid ${color}`;
+        element.style.outlineOffset = "4px";
 
-        lastHighlightedButton = button;
+        highlightedElement = element;
 
-        button.scrollIntoView({
+        element.scrollIntoView({
             behavior: "smooth",
             block: "center"
         });
@@ -174,43 +178,57 @@
 
     function checkPage() {
         if (!pageMatchesTargetProduct()) {
-            clearOldHighlight();
+            clearHighlight();
+
             setStatus(
                 "🔒 SAFE TEST — WRONG PRODUCT / SKU",
                 "#8b0000"
             );
+
             return;
         }
 
-        const button = findCorrectAddToCartButton();
+        const productArea = findProductArea();
 
-        if (!button) {
-            clearOldHighlight();
+        if (!productArea) {
+            clearHighlight();
 
             setStatus(
-                "🟡 SAFE TEST — NO VALID ADD TO CART BUTTON FOUND",
-                "#8a6d00"
+                "🟠 SAFE TEST — PRODUCT FOUND, PURCHASE AREA NOT FOUND",
+                "#a35a00"
             );
 
             return;
         }
 
-        highlightButton(button);
+        const addButton = findAddToCartInside(productArea);
+
+        if (addButton) {
+            highlight(addButton, "lime");
+
+            setStatus(
+                "✅ SAFE TEST PASSED — EXACT ADD TO CART BUTTON FOUND",
+                "#087f23"
+            );
+
+            return;
+        }
+
+        // No Add to Cart button yet.
+        // Highlight the correct product area instead.
+        highlight(productArea, "orange");
 
         setStatus(
-            "✅ SAFE TEST PASSED — THIS IS THE BUTTON I WOULD PRESS",
-            "#087f23"
+            "🟡 SAFE TEST — CORRECT PRODUCT AREA FOUND — WAITING FOR ADD TO CART",
+            "#8a6d00"
         );
-
-        // IMPORTANT:
-        // NO CLICK OCCURS IN THIS TEST VERSION.
     }
 
     // ============================================================
     // START
     // ============================================================
 
-    setStatus("🔍 SAFE TEST — CHECKING BEST BUY PAGE");
+    setStatus("🔍 SAFE TEST v1.0.1 — CHECKING BEST BUY");
 
     checkPage();
 
