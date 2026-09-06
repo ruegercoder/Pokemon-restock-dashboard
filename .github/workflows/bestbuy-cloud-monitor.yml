@@ -1,0 +1,286 @@
+name: Best Buy Pokémon Cloud Monitor
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-bestbuy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: Inspect Best Buy product
+        run: |
+          cat > check-bestbuy.js <<'EOF'
+          const { chromium } = require("playwright");
+
+          const PRODUCT = {
+            name: "Pokémon TCG 30th Celebration Ultra-Premium Collection",
+            sku: "6685563",
+            url: "https://www.bestbuy.com/product/pokemon-trading-card-game-30th-celebration-ultra-premium-collection-day-or-night-1-ultra-premium-collection-per-order-styles-may-vary/JJG2TL8254",
+            requiredWords: [
+              "30th celebration",
+              "ultra-premium collection",
+              "6685563"
+            ]
+          };
+
+          (async () => {
+
+            const browser = await chromium.launch({
+              headless: true
+            });
+
+            const context = await browser.newContext({
+              userAgent:
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) " +
+                "AppleWebKit/605.1.15 (KHTML, like Gecko) " +
+                "Version/18.0 Mobile/15E148 Safari/604.1",
+
+              viewport: {
+                width: 390,
+                height: 844
+              },
+
+              locale: "en-US"
+            });
+
+            const page = await context.newPage();
+
+            console.log("========================================");
+            console.log("BEST BUY PRODUCT DIAGNOSTIC");
+            console.log("========================================");
+
+            console.log(`Product: ${PRODUCT.name}`);
+            console.log(`SKU: ${PRODUCT.sku}`);
+            console.log(PRODUCT.url);
+
+            try {
+
+              const response = await page.goto(
+                PRODUCT.url,
+                {
+                  waitUntil: "domcontentloaded",
+                  timeout: 60000
+                }
+              );
+
+              console.log(
+                `HTTP status: ${
+                  response ? response.status() : "unknown"
+                }`
+              );
+
+              await page.waitForTimeout(8000);
+
+              const title =
+                await page.title().catch(() => "");
+
+              const bodyText =
+                await page
+                  .locator("body")
+                  .innerText()
+                  .catch(() => "");
+
+              const lower =
+                bodyText.toLowerCase();
+
+              console.log(`Title: ${title}`);
+              console.log(
+                `Page text length: ${bodyText.length}`
+              );
+
+              const blockedWords = [
+                "access denied",
+                "verify you are human",
+                "captcha",
+                "automated access",
+                "robot",
+                "unusual traffic"
+              ];
+
+              const blocked =
+                blockedWords.some(
+                  word => lower.includes(word)
+                );
+
+              if (blocked) {
+
+                console.log(
+                  "⚠️ Best Buy appears to have returned a blocked/challenge page."
+                );
+
+                process.exitCode = 2;
+                return;
+              }
+
+              const verified =
+                PRODUCT.requiredWords.every(
+                  word =>
+                    lower.includes(
+                      word.toLowerCase()
+                    )
+                );
+
+              if (!verified) {
+
+                console.log(
+                  "🔒 Product identity verification FAILED."
+                );
+
+                process.exitCode = 3;
+                return;
+              }
+
+              console.log(
+                "✅ Product identity verified."
+              );
+
+              const statusPhrases = [
+                "coming soon",
+                "sold out",
+                "unavailable",
+                "shipping not available",
+                "pickup not available",
+                "add to cart",
+                "pre-order",
+                "preorder",
+                "reserve"
+              ];
+
+              console.log(
+                "\n--- STATUS PHRASES FOUND ---"
+              );
+
+              for (const phrase of statusPhrases) {
+
+                console.log(
+                  `${phrase}: ${
+                    lower.includes(phrase)
+                      ? "YES"
+                      : "no"
+                  }`
+                );
+              }
+
+              console.log(
+                "\n--- VISIBLE ENABLED BUTTONS ---"
+              );
+
+              const buttons =
+                page.locator("button");
+
+              const count =
+                await buttons.count();
+
+              let shown = 0;
+
+              for (
+                let i = 0;
+                i < count && shown < 50;
+                i++
+              ) {
+
+                const button =
+                  buttons.nth(i);
+
+                try {
+
+                  if (
+                    !(await button.isVisible())
+                  ) {
+                    continue;
+                  }
+
+                  if (
+                    !(await button.isEnabled())
+                  ) {
+                    continue;
+                  }
+
+                  const text =
+                    (
+                      await button
+                        .innerText()
+                        .catch(() => "")
+                    )
+                      .trim()
+                      .replace(/\s+/g, " ");
+
+                  if (!text) {
+                    continue;
+                  }
+
+                  console.log(
+                    `[${shown + 1}] ${
+                      text.slice(0, 180)
+                    }`
+                  );
+
+                  shown++;
+
+                } catch (_) {}
+              }
+
+              console.log(
+                "\n--- PRODUCT PAGE SUMMARY ---"
+              );
+
+              console.log(
+                `Coming Soon: ${
+                  lower.includes("coming soon")
+                }`
+              );
+
+              console.log(
+                `Add to Cart text present: ${
+                  lower.includes("add to cart")
+                }`
+              );
+
+              console.log(
+                `Pre-order text present: ${
+                  lower.includes("pre-order") ||
+                  lower.includes("preorder")
+                }`
+              );
+
+              console.log(
+                `Reserve text present: ${
+                  lower.includes("reserve")
+                }`
+              );
+
+              console.log(
+                "\n✅ Diagnostic completed. No cart action was attempted."
+              );
+
+            } catch (error) {
+
+              console.error(
+                "⚠️ Diagnostic failed:",
+                error.message
+              );
+
+              process.exitCode = 1;
+
+            } finally {
+
+              await browser.close();
+            }
+
+          })();
+          EOF
+
+          node check-bestbuy.js
