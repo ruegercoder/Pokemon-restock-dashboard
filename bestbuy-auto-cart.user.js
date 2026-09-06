@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Best Buy Pokemon Auto Add
+// @name         Best Buy Pokemon Auto Add - SAFE CLICK TEST
 // @namespace    pokemon-restock-dashboard
-// @version      1.0.0
-// @description  Watches the exact Best Buy purchase control and clicks Add to Cart when available.
+// @version      1.0.1-test
+// @description  Safe fake Add to Cart test for Best Buy Pokemon watcher
 // @match        https://www.bestbuy.com/product/*
 // @grant        none
 // @run-at       document-idle
@@ -11,16 +11,10 @@
 (function () {
     "use strict";
 
-    const CHECK_INTERVAL = 1500;
+    const CHECK_INTERVAL = 1000;
+    let clicked = false;
 
-    let lastStatus = "";
-    let clickCount = 0;
-
-    // ============================================================
-    // STATUS BANNER
-    // ============================================================
-
-    function getStatusBox() {
+    function makeStatus() {
         let box = document.getElementById("bestbuy-pokemon-status");
 
         if (!box) {
@@ -33,8 +27,8 @@
                 left: 50%;
                 transform: translateX(-50%);
                 z-index: 9999999;
-                background: #222;
-                color: #fff;
+                background: #8a6d00;
+                color: white;
                 padding: 12px 18px;
                 border-radius: 16px;
                 font-size: 16px;
@@ -50,141 +44,74 @@
         return box;
     }
 
-    function setStatus(text, background = "#222") {
-        if (text === lastStatus) return;
-
-        lastStatus = text;
-
-        const box = getStatusBox();
+    function setStatus(text, color) {
+        const box = makeStatus();
         box.textContent = text;
-        box.style.background = background;
-
-        console.log("[BEST BUY AUTO ADD]", text);
+        box.style.background = color;
     }
 
-    // ============================================================
-    // FIND THE EXACT PURCHASE CONTROL
-    // ============================================================
+    function createFakeButton() {
+        if (document.getElementById("pokemon-fake-add")) return;
 
-    function findPurchaseControl() {
-        const elements = [
-            ...document.querySelectorAll(
-                "button, [role='button'], a"
-            )
-        ];
+        const fake = document.createElement("button");
+        fake.id = "pokemon-fake-add";
+        fake.textContent = "Add to Cart — SAFE TEST";
 
-        // First find the exact Coming Soon / Add to Cart style
-        // purchase control in the main product area.
-        for (const el of elements) {
-            const text = (el.innerText || el.textContent || "")
-                .trim()
-                .replace(/\s+/g, " ")
-                .toLowerCase();
+        fake.style.cssText = `
+            position: fixed;
+            bottom: 25px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999999;
+            width: calc(100% - 40px);
+            max-width: 500px;
+            padding: 18px;
+            font-size: 18px;
+            font-weight: 800;
+            background: #ffe000;
+            color: #111;
+            border: 3px solid #111;
+            border-radius: 12px;
+        `;
 
-            if (
-                text === "coming soon" ||
-                text === "add to cart"
-            ) {
-                const rect = el.getBoundingClientRect();
-
-                if (
-                    rect.width > 200 &&
-                    rect.height > 40
-                ) {
-                    return el;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    // ============================================================
-    // CART CONFIRMATION
-    // ============================================================
-
-    function cartLooksUpdated() {
-        const pageText = document.body.innerText.toLowerCase();
-
-        return (
-            pageText.includes("added to cart") ||
-            pageText.includes("view cart") ||
-            pageText.includes("go to cart")
-        );
-    }
-
-    // ============================================================
-    // MAIN WATCHER
-    // ============================================================
-
-    function checkProduct() {
-        const control = findPurchaseControl();
-
-        if (!control) {
-            setStatus(
-                "🟡 WATCHING — PURCHASE CONTROL NOT FOUND",
-                "#8a6d00"
-            );
-            return;
-        }
-
-        const text = (control.innerText || control.textContent || "")
-            .trim()
-            .replace(/\s+/g, " ")
-            .toLowerCase();
-
-        // COMING SOON
-        if (text === "coming soon") {
-            setStatus(
-                "🟡 COMING SOON — WATCHING",
-                "#8a6d00"
-            );
-            return;
-        }
-
-        // ADD TO CART
-        if (text === "add to cart") {
-            if (cartLooksUpdated()) {
-                setStatus(
-                    "✅ ITEM APPEARS TO BE IN CART",
-                    "#26732b"
-                );
-                return;
-            }
-
-            clickCount++;
+        fake.addEventListener("click", () => {
+            clicked = true;
+            fake.textContent = "✅ SAFE TEST CLICKED";
+            fake.style.background = "#2e7d32";
+            fake.style.color = "white";
 
             setStatus(
-                `🟢 ADD TO CART FOUND — CLICKING (${clickCount})`,
-                "#26732b"
+                "✅ SAFE AUTO-CLICK TEST PASSED",
+                "#2e7d32"
             );
+        });
 
-            control.scrollIntoView({
-                behavior: "instant",
-                block: "center"
-            });
-
-            control.click();
-
-            return;
-        }
-
-        setStatus(
-            "🟡 WATCHING",
-            "#8a6d00"
-        );
+        document.body.appendChild(fake);
     }
 
-    // ============================================================
-    // START
-    // ============================================================
+    function checkTestButton() {
+        const fake = document.getElementById("pokemon-fake-add");
+
+        if (!fake || clicked) return;
+
+        const text = fake.textContent.trim().toLowerCase();
+
+        if (text === "add to cart — safe test") {
+            setStatus(
+                "🟢 FAKE ADD TO CART FOUND — AUTO CLICKING",
+                "#2e7d32"
+            );
+
+            fake.click();
+        }
+    }
 
     setStatus(
-        "🟡 BEST BUY WATCHER STARTING",
-        "#8a6d00"
+        "🧪 SAFE CLICK TEST STARTING",
+        "#555"
     );
 
-    checkProduct();
+    createFakeButton();
 
-    setInterval(checkProduct, CHECK_INTERVAL);
+    setInterval(checkTestButton, CHECK_INTERVAL);
 })();
