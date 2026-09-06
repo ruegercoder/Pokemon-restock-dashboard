@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Target Pokemon Auto Add - Multi Product
+// @name         Target Pokemon Auto Add - Multi Product SAFE TEST
 // @namespace    pokemon-restock-dashboard
-// @version      2.7.0
-// @description  Safely auto-adds approved Pokemon 30th Celebration products on Target
+// @version      2.7.1-test
+// @description  Safe isolated test for approved Pokemon 30th Celebration products
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -10,6 +10,17 @@
 
 (function () {
     "use strict";
+
+    // ============================================================
+    // SAFE TEST MODE
+    // ============================================================
+    //
+    // IMPORTANT:
+    // This version NEVER clicks a real Target Add to Cart button.
+    // It only clicks the fake test button created by this script.
+    //
+
+    const TEST_MODE = true;
 
     // ============================================================
     // APPROVED PRODUCTS
@@ -84,6 +95,7 @@
 
     let alreadyClicked = false;
     let statusBox = null;
+    let fakeButton = null;
 
     // ============================================================
     // STATUS BOX
@@ -92,7 +104,9 @@
     function createStatusBox() {
 
         if (document.getElementById("pokemon-target-status")) {
-            statusBox = document.getElementById("pokemon-target-status");
+            statusBox =
+                document.getElementById("pokemon-target-status");
+
             return;
         }
 
@@ -118,7 +132,8 @@
             box-shadow: 0 4px 14px rgba(0,0,0,.35);
         `;
 
-        box.textContent = "🔍 Checking Target product...";
+        box.textContent =
+            "🧪 SAFE TEST — Checking Target product...";
 
         document.body.appendChild(box);
 
@@ -167,126 +182,134 @@
                 .toLowerCase();
 
         return product.requiredWords.every(word =>
-            pageText.includes(word.toLowerCase())
-        );
-    }
-
-    // ============================================================
-    // SOLD OUT SAFETY LOCK
-    // ============================================================
-
-    function pageShowsSoldOut() {
-
-        const pageText =
-            (document.body.innerText || "")
-                .toLowerCase();
-
-        const soldOutWords = [
-            "out of stock",
-            "sold out",
-            "temporarily out of stock"
-        ];
-
-        return soldOutWords.some(word =>
-            pageText.includes(word)
-        );
-    }
-
-    // ============================================================
-    // FIND SAFE PRODUCT AREA
-    // ============================================================
-
-    function findProductArea(product) {
-
-        const elements = Array.from(
-            document.querySelectorAll(
-                "main, section, div"
+            pageText.includes(
+                word.toLowerCase()
             )
         );
-
-        let bestMatch = null;
-        let bestScore = 0;
-
-        for (const element of elements) {
-
-            const text =
-                (element.innerText || "")
-                    .toLowerCase();
-
-            if (!text) continue;
-
-            let score = 0;
-
-            for (const word of product.requiredWords) {
-
-                if (text.includes(word.toLowerCase())) {
-                    score++;
-                }
-            }
-
-            if (
-                score > bestScore &&
-                score >= Math.max(2, product.requiredWords.length - 1)
-            ) {
-
-                bestMatch = element;
-                bestScore = score;
-            }
-        }
-
-        return bestMatch;
     }
 
     // ============================================================
-    // FIND ADD TO CART ONLY INSIDE PRODUCT AREA
+    // CREATE COMPLETELY ISOLATED FAKE BUTTON
     // ============================================================
 
-    function findSafeAddToCart(product) {
+    function createFakeTestButton(product) {
 
-        const productArea =
-            findProductArea(product);
-
-        if (!productArea) {
-            return null;
+        if (
+            document.getElementById(
+                "pokemon-safe-test-button"
+            )
+        ) {
+            return;
         }
 
-        const buttons =
-            Array.from(
-                productArea.querySelectorAll("button")
+        const button =
+            document.createElement("button");
+
+        button.id =
+            "pokemon-safe-test-button";
+
+        button.type = "button";
+
+        button.textContent =
+            `🧪 ADD TO CART — SAFE TEST — ${product.name}`;
+
+        button.style.cssText = `
+            position: fixed;
+            top: 75px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 999999;
+            background: #1473e6;
+            color: white;
+            border: 3px solid white;
+            padding: 14px 18px;
+            border-radius: 14px;
+            font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            max-width: 90%;
+            box-shadow: 0 4px 14px rgba(0,0,0,.4);
+        `;
+
+        button.dataset.pokemonSafeTest =
+            "true";
+
+        button.dataset.productId =
+            product.id;
+
+        button.addEventListener(
+            "click",
+            function () {
+
+                if (
+                    button.dataset.pokemonSafeTest !==
+                    "true"
+                ) {
+                    return;
+                }
+
+                button.style.background =
+                    "#16843c";
+
+                button.textContent =
+                    `✅ SAFE TEST CLICKED — ${product.name}`;
+
+                setStatus(
+                    `✅ ${product.name} — SAFE AUTO CLICK PASSED`
+                );
+
+                console.log(
+                    "[Pokemon SAFE TEST]",
+                    "Fake button successfully clicked:",
+                    product.name,
+                    product.id
+                );
+            }
+        );
+
+        document.body.appendChild(button);
+
+        fakeButton = button;
+    }
+
+    // ============================================================
+    // GET ONLY OUR FAKE BUTTON
+    // ============================================================
+
+    function getFakeTestButton(product) {
+
+        const button =
+            document.getElementById(
+                "pokemon-safe-test-button"
             );
 
-        const matches =
-            buttons.filter(button => {
-
-                const text =
-                    (button.innerText ||
-                     button.textContent ||
-                     "")
-                        .trim()
-                        .toLowerCase();
-
-                return (
-                    text.includes("add to cart") &&
-                    !button.disabled &&
-                    button.offsetParent !== null
-                );
-            });
-
-        // EXTREME SAFETY:
-        // More than one button means we refuse to click.
-
-        if (matches.length !== 1) {
+        if (!button) {
             return null;
         }
 
-        return matches[0];
+        if (
+            button.dataset.pokemonSafeTest !==
+            "true"
+        ) {
+            return null;
+        }
+
+        if (
+            button.dataset.productId !==
+            product.id
+        ) {
+            return null;
+        }
+
+        return button;
     }
 
     // ============================================================
-    // MAIN CHECK
+    // SAFE TEST
     // ============================================================
 
-    function checkTarget() {
+    function runSafeTest() {
 
         if (alreadyClicked) {
             return;
@@ -296,13 +319,13 @@
             getCurrentProduct();
 
         // --------------------------------------------------------
-        // NOT ONE OF OUR APPROVED PRODUCTS
+        // PRODUCT MUST BE ON APPROVED LIST
         // --------------------------------------------------------
 
         if (!product) {
 
             setStatus(
-                "🔒 NOT AN APPROVED POKÉMON PRODUCT"
+                "🔒 SAFE TEST — NOT AN APPROVED POKÉMON PRODUCT"
             );
 
             return;
@@ -322,68 +345,62 @@
         }
 
         // --------------------------------------------------------
-        // HARD SOLD OUT LOCK
+        // CREATE OUR OWN TEST BUTTON
         // --------------------------------------------------------
 
-        if (pageShowsSoldOut()) {
-
-            setStatus(
-                `🟡 ${product.name} — SOLD OUT — WATCHING`
-            );
-
-            return;
-        }
-
-        // --------------------------------------------------------
-        // LOOK FOR SAFE ADD TO CART BUTTON
-        // --------------------------------------------------------
+        createFakeTestButton(product);
 
         const button =
-            findSafeAddToCart(product);
+            getFakeTestButton(product);
 
         if (!button) {
 
             setStatus(
-                `🔍 ${product.name} — WATCHING FOR ADD TO CART`
+                `🔴 ${product.name} — SAFE TEST BUTTON NOT FOUND`
             );
 
             return;
         }
 
-        // --------------------------------------------------------
-        // FINAL SAFETY CHECK
-        // --------------------------------------------------------
+        setStatus(
+            `🧪 ${product.name} — SAFE AUTO CLICK TEST`
+        );
 
-        if (
-            button.disabled ||
-            button.offsetParent === null
-        ) {
-
-            return;
-        }
+        // Small delay so you can visually see
+        // the fake button before it gets clicked.
 
         alreadyClicked = true;
 
-        setStatus(
-            `🟢 ${product.name} — ADDING TO CART`
-        );
-
-        console.log(
-            "[Pokemon Auto Add]",
-            "Clicking verified button for:",
-            product.name,
-            product.id
-        );
-
-        button.click();
-
         setTimeout(() => {
 
-            setStatus(
-                `✅ ${product.name} — ADD TO CART CLICKED`
-            );
+            // ----------------------------------------------------
+            // FINAL TEST SAFETY LOCK
+            // ----------------------------------------------------
 
-        }, 500);
+            if (
+                button.id !==
+                "pokemon-safe-test-button"
+            ) {
+                return;
+            }
+
+            if (
+                button.dataset.pokemonSafeTest !==
+                "true"
+            ) {
+                return;
+            }
+
+            if (
+                button.dataset.productId !==
+                product.id
+            ) {
+                return;
+            }
+
+            button.click();
+
+        }, 1500);
     }
 
     // ============================================================
@@ -392,10 +409,10 @@
 
     createStatusBox();
 
-    checkTarget();
+    runSafeTest();
 
     setInterval(
-        checkTarget,
+        runSafeTest,
         CHECK_INTERVAL
     );
 
