@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.6.9-test
-// @description  Target ETB auto-add with hard sold-out safety lock
+// @version      2.7.0-test
+// @description  Target ETB scoped Add to Cart detection - NO CLICK TEST
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -20,8 +20,6 @@
     ];
 
     const CHECK_INTERVAL = 1500;
-
-    let alreadyClicked = false;
 
     function createStatusBox() {
         let box = document.getElementById("pokemon-target-status");
@@ -45,6 +43,7 @@
                 font-family:Arial,sans-serif;
                 text-align:center;
                 box-shadow:0 4px 14px rgba(0,0,0,.25);
+                max-width:90%;
             `;
 
             document.body.appendChild(box);
@@ -67,7 +66,6 @@
         return Array.from(
             document.querySelectorAll("h1")
         ).find(el => {
-
             const text = (
                 el.innerText ||
                 el.textContent ||
@@ -77,18 +75,9 @@
             return REQUIRED_WORDS.every(word =>
                 text.includes(word)
             );
-
         }) || null;
     }
 
-    /*
-     * HARD SAFETY CHECK
-     *
-     * Look specifically around the main H1 product title
-     * for the target product's SOLD OUT message.
-     *
-     * If found, NOTHING can be clicked.
-     */
     function mainProductIsSoldOut() {
 
         const title = findProductTitle();
@@ -102,9 +91,11 @@
             window.scrollY;
 
         const elements =
-            Array.from(document.querySelectorAll(
-                "div, span, p"
-            ));
+            Array.from(
+                document.querySelectorAll(
+                    "div, span, p"
+                )
+            );
 
         for (const el of elements) {
 
@@ -127,13 +118,6 @@
                 el.getBoundingClientRect().top +
                 window.scrollY;
 
-            /*
-             * Target's main stock status sits very
-             * close to the actual product title.
-             *
-             * Recommendation products farther down
-             * the page will fail this distance check.
-             */
             const distance =
                 Math.abs(y - titleY);
 
@@ -146,41 +130,118 @@
     }
 
     /*
-     * Look for an Add to Cart button only after
-     * the sold-out safety lock has cleared.
+     * Find Add to Cart ONLY if it is physically
+     * near the MAIN product title.
+     *
+     * Recommendation buttons far down the page
+     * are rejected.
      */
-    function findCandidateButton() {
+    function findScopedAddToCartButton() {
+
+        const title = findProductTitle();
+
+        if (!title) {
+            return null;
+        }
+
+        const titleRect =
+            title.getBoundingClientRect();
+
+        const titleCenterY =
+            titleRect.top +
+            window.scrollY +
+            (titleRect.height / 2);
 
         const buttons =
-            Array.from(document.querySelectorAll(
-                "button"
-            ));
-
-        return buttons.find(button => {
-
-            const text = (
-                button.innerText ||
-                button.textContent ||
-                ""
-            )
-                .trim()
-                .toLowerCase();
-
-            return (
-                (
-                    text === "add to cart" ||
-                    text.startsWith("add to cart")
-                ) &&
-                !button.disabled &&
-                button.offsetParent !== null
+            Array.from(
+                document.querySelectorAll("button")
             );
 
-        }) || null;
+        const candidates =
+            buttons.filter(button => {
+
+                const text = (
+                    button.innerText ||
+                    button.textContent ||
+                    ""
+                )
+                    .trim()
+                    .toLowerCase();
+
+                if (
+                    text !== "add to cart" &&
+                    !text.startsWith("add to cart")
+                ) {
+                    return false;
+                }
+
+                if (
+                    button.disabled ||
+                    button.offsetParent === null
+                ) {
+                    return false;
+                }
+
+                const rect =
+                    button.getBoundingClientRect();
+
+                const buttonCenterY =
+                    rect.top +
+                    window.scrollY +
+                    (rect.height / 2);
+
+                const verticalDistance =
+                    Math.abs(
+                        buttonCenterY -
+                        titleCenterY
+                    );
+
+                /*
+                 * Hard distance boundary:
+                 * button must be close to main ETB.
+                 */
+                return verticalDistance < 900;
+            });
+
+        if (candidates.length !== 1) {
+            return null;
+        }
+
+        return candidates[0];
+    }
+
+    function clearTestHighlights() {
+
+        document
+            .querySelectorAll(
+                "[data-pokemon-test-highlight]"
+            )
+            .forEach(el => {
+                el.style.outline = "";
+                el.removeAttribute(
+                    "data-pokemon-test-highlight"
+                );
+            });
+    }
+
+    function highlightCandidate(button) {
+
+        clearTestHighlights();
+
+        button.style.outline =
+            "5px solid lime";
+
+        button.setAttribute(
+            "data-pokemon-test-highlight",
+            "true"
+        );
     }
 
     function checkStock() {
 
         if (!isCorrectURL()) {
+
+            clearTestHighlights();
 
             setStatus(
                 "⚪ WRONG PRODUCT — NOT ACTIVE"
@@ -189,9 +250,12 @@
             return;
         }
 
-        const title = findProductTitle();
+        const title =
+            findProductTitle();
 
         if (!title) {
+
+            clearTestHighlights();
 
             setStatus(
                 "🔎 WAITING FOR TARGET PRODUCT"
@@ -201,71 +265,62 @@
         }
 
         /*
-         * THIS CHECK HAPPENS BEFORE WE EVEN
-         * SEARCH FOR ADD TO CART BUTTONS.
+         * SOLD OUT ALWAYS WINS.
          */
         if (mainProductIsSoldOut()) {
 
-            alreadyClicked = false;
+            clearTestHighlights();
 
             setStatus(
-                "🟡 SOLD OUT — WATCHING"
-            );
-
-            return;
-        }
-
-        /*
-         * Only reach this point if the main ETB
-         * no longer says Sold Out.
-         */
-
-        if (alreadyClicked) {
-
-            setStatus(
-                "✅ TARGET ETB CLICKED"
+                "🟡 SOLD OUT — SAFETY LOCK ACTIVE"
             );
 
             return;
         }
 
         const button =
-            findCandidateButton();
+            findScopedAddToCartButton();
 
         if (!button) {
 
+            clearTestHighlights();
+
             setStatus(
-                "🟠 POSSIBLY IN STOCK — WAITING FOR BUTTON"
+                "🟠 NO SAFE ETB BUTTON FOUND"
             );
 
             return;
         }
 
         /*
-         * Final safety check immediately before click.
+         * SECOND sold-out check.
          */
         if (mainProductIsSoldOut()) {
 
+            clearTestHighlights();
+
             setStatus(
-                "🛑 CLICK BLOCKED — ETB SOLD OUT"
+                "🛑 BUTTON BLOCKED — SOLD OUT"
             );
 
             return;
         }
 
+        /*
+         * TEST ONLY:
+         * highlight, but NEVER CLICK.
+         */
+        highlightCandidate(button);
+
         setStatus(
-            "🟢 ETB AVAILABLE — ADDING TO CART"
+            "🟢 SAFE ETB BUTTON FOUND — TEST ONLY"
         );
-
-        alreadyClicked = true;
-
-        button.click();
     }
 
     createStatusBox();
 
     setStatus(
-        "🔎 STARTING TARGET WATCH"
+        "🔎 STARTING v2.7 SAFE TEST"
     );
 
     setTimeout(
