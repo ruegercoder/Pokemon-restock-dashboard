@@ -2,11 +2,34 @@ name: Target Pokémon Cloud Monitor
 
 on:
   workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Send a TEST notification only"
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: "*/5 * * * *"
 
 jobs:
-  check-target:
+  test-alert:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Target monitor test notification
+        run: |
+          curl -fsS --max-time 20 \
+            -H "Title: 🧪 Target Pokémon Monitor Test" \
+            -H "Priority: high" \
+            -H "Tags: test_tube,pokemon" \
+            -H "Click: https://www.target.com/p/-/A-1010892076" \
+            -d "Cloud monitoring and notifications are working. Tap to open the Target ETB page." \
+            "https://ntfy.sh/joshpokemon6685563"
+
+          echo "✅ Test notification sent" in
+    check-target:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_alert }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
