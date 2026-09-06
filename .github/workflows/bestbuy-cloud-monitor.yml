@@ -9,6 +9,12 @@ on:
         default: false
         type: boolean
 
+      simulate_restock:
+        description: "SIMULATE a Best Buy restock for dedupe testing"
+        required: false
+        default: false
+        type: boolean
+
   schedule:
     - cron: "*/5 * * * *"
 
@@ -18,8 +24,12 @@ concurrency:
 
 jobs:
 
+  # ============================================================
+  # SIMPLE NOTIFICATION TEST
+  # ============================================================
+
   test-alert:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert && !inputs.simulate_restock }}
     runs-on: ubuntu-latest
 
     steps:
@@ -36,12 +46,261 @@ jobs:
           echo "✅ Test notification sent"
 
 
+  # ============================================================
+  # SIMULATED RESTOCK DEDUPE TEST
+  # ============================================================
+
+  simulate-restock:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate_restock }}
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Restore Best Buy dedupe test state
+        uses: actions/cache/restore@v4
+        with:
+          path: .bestbuy-dedupe-state.json
+          key: bestbuy-dedupe-state-${{ github.run_id }}
+          restore-keys: |
+            bestbuy-dedupe-state-
+
+      - name: Simulate Best Buy restock
+        run: |
+          cat > simulate-bestbuy.js <<'EOF'
+
+          const fs = require("fs");
+
+          const STATE_FILE =
+            ".bestbuy-dedupe-state.json";
+
+          const NTFY_TOPIC =
+            "joshpokemon6685563";
+
+          const PRODUCT = {
+            name: "Pokémon TCG 30th Celebration Ultra-Premium Collection",
+            sku: "6685563",
+            url: "https://www.bestbuy.com/product/pokemon-trading-card-game-30th-celebration-ultra-premium-collection-day-or-night-1-ultra-premium-collection-per-order-styles-may-vary/JJG2TL8254"
+          };
+
+
+          function loadState() {
+
+            try {
+
+              if (!fs.existsSync(STATE_FILE)) {
+
+                console.log(
+                  "No previous Best Buy dedupe test state found."
+                );
+
+                return {};
+              }
+
+
+              const state =
+                JSON.parse(
+                  fs.readFileSync(
+                    STATE_FILE,
+                    "utf8"
+                  )
+                );
+
+
+              console.log(
+                "✅ Previous Best Buy dedupe test state loaded."
+              );
+
+
+              return state;
+
+
+            } catch (error) {
+
+              console.log(
+                "⚠️ Could not read Best Buy dedupe test state."
+              );
+
+              return {};
+            }
+          }
+
+
+          function saveState(state) {
+
+            fs.writeFileSync(
+              STATE_FILE,
+              JSON.stringify(
+                state,
+                null,
+                2
+              )
+            );
+
+
+            console.log(
+              "✅ Best Buy dedupe test state saved."
+            );
+          }
+
+
+          async function sendNotification() {
+
+            const response =
+              await fetch(
+                `https://ntfy.sh/${NTFY_TOPIC}`,
+                {
+                  method: "POST",
+
+                  headers: {
+                    "Title": "SIMULATED BEST BUY RESTOCK",
+                    "Priority": "urgent",
+                    "Tags": "test_tube,pokemon",
+                    "Click": PRODUCT.url
+                  },
+
+                  body:
+                    `SIMULATION ONLY\n\n` +
+                    `${PRODUCT.name}\n\n` +
+                    `SKU ${PRODUCT.sku}\n\n` +
+                    `This is the Best Buy dedupe test.`
+                }
+              );
+
+
+            console.log(
+              `Notification status: ${response.status}`
+            );
+
+
+            if (!response.ok) {
+
+              throw new Error(
+                `Notification failed with HTTP ${response.status}`
+              );
+            }
+          }
+
+
+          (async () => {
+
+            console.log(
+              "========================================"
+            );
+
+            console.log(
+              "BEST BUY DEDUPE SIMULATION"
+            );
+
+            console.log(
+              "========================================"
+            );
+
+
+            const state =
+              loadState();
+
+
+            const wasAvailable =
+              state[
+                PRODUCT.sku
+              ] === true;
+
+
+            // This test deliberately pretends
+            // the product is available.
+            const simulatedAvailable =
+              true;
+
+
+            if (simulatedAvailable) {
+
+              console.log(
+                `🚨 TEST AVAILABLE: ${PRODUCT.name}`
+              );
+
+
+              if (!wasAvailable) {
+
+                console.log(
+                  "🔔 TEST: First simulated restock — sending notification."
+                );
+
+
+                await sendNotification();
+
+
+              } else {
+
+                console.log(
+                  "🔕 TEST: Already alerted for simulated Best Buy restock — no duplicate notification."
+                );
+              }
+
+
+              state[
+                PRODUCT.sku
+              ] = true;
+            }
+
+
+            saveState(
+              state
+            );
+
+
+            if (wasAvailable) {
+
+              console.log(
+                "✅ DEDUPE TEST PASSED."
+              );
+
+            } else {
+
+              console.log(
+                "✅ FIRST SIMULATED RESTOCK RECORDED."
+              );
+
+              console.log(
+                "Run the simulation a SECOND time."
+              );
+            }
+
+
+            console.log(
+              "========================================"
+            );
+
+          })().catch(error => {
+
+            console.error(error);
+
+            process.exit(1);
+
+          });
+
+          EOF
+
+          node simulate-bestbuy.js
+
+      - name: Save Best Buy dedupe test state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .bestbuy-dedupe-state.json
+          key: bestbuy-dedupe-state-${{ github.run_id }}
+
+
+  # ============================================================
+  # LIVE BEST BUY MONITOR
+  # ============================================================
+
   check-bestbuy:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_alert }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.test_alert && !inputs.simulate_restock) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -71,13 +330,17 @@ jobs:
           const { chromium } = require("playwright");
           const fs = require("fs");
 
-          const STATE_FILE = ".bestbuy-stock-state.json";
-          const NTFY_TOPIC = "joshpokemon6685563";
+          const STATE_FILE =
+            ".bestbuy-stock-state.json";
+
+          const NTFY_TOPIC =
+            "joshpokemon6685563";
 
           const PRODUCT = {
             name: "Pokémon TCG 30th Celebration Ultra-Premium Collection",
             sku: "6685563",
             url: "https://www.bestbuy.com/product/pokemon-trading-card-game-30th-celebration-ultra-premium-collection-day-or-night-1-ultra-premium-collection-per-order-styles-may-vary/JJG2TL8254",
+
             requiredWords: [
               "30th celebration",
               "ultra-premium collection",
@@ -85,12 +348,20 @@ jobs:
             ]
           };
 
+
           function loadState() {
+
             try {
+
               if (!fs.existsSync(STATE_FILE)) {
-                console.log("No previous Best Buy stock state found.");
+
+                console.log(
+                  "No previous Best Buy stock state found."
+                );
+
                 return {};
               }
+
 
               const state =
                 JSON.parse(
@@ -100,19 +371,28 @@ jobs:
                   )
                 );
 
-              console.log("✅ Previous Best Buy stock state loaded.");
+
+              console.log(
+                "✅ Previous Best Buy stock state loaded."
+              );
+
 
               return state;
 
+
             } catch (error) {
 
-              console.log("⚠️ Could not read previous Best Buy state.");
+              console.log(
+                "⚠️ Could not read previous Best Buy state."
+              );
 
               return {};
             }
           }
 
+
           function saveState(state) {
+
             fs.writeFileSync(
               STATE_FILE,
               JSON.stringify(
@@ -122,8 +402,12 @@ jobs:
               )
             );
 
-            console.log("✅ Best Buy stock state saved.");
+
+            console.log(
+              "✅ Best Buy stock state saved."
+            );
           }
+
 
           async function sendNotification(url) {
 
@@ -147,33 +431,49 @@ jobs:
                 }
               );
 
+
             console.log(
               `Notification sent: ${response.status}`
             );
 
+
             if (!response.ok) {
+
               throw new Error(
                 `Notification failed with HTTP ${response.status}`
               );
             }
           }
 
+
           (async () => {
 
-            console.log("========================================");
-            console.log("BEST BUY POKÉMON CLOUD MONITOR");
-            console.log("========================================");
+            console.log(
+              "========================================"
+            );
+
+            console.log(
+              "BEST BUY POKÉMON CLOUD MONITOR"
+            );
+
+            console.log(
+              "========================================"
+            );
+
 
             const stockState =
               loadState();
+
 
             const browser =
               await chromium.launch({
                 headless: true
               });
 
+
             const context =
               await browser.newContext({
+
                 userAgent:
                   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) " +
                   "AppleWebKit/605.1.15 (KHTML, like Gecko) " +
@@ -187,14 +487,25 @@ jobs:
                 locale: "en-US"
               });
 
+
             const page =
               await context.newPage();
 
+
             try {
 
-              console.log(`Checking: ${PRODUCT.name}`);
-              console.log(`SKU: ${PRODUCT.sku}`);
-              console.log(PRODUCT.url);
+              console.log(
+                `Checking: ${PRODUCT.name}`
+              );
+
+              console.log(
+                `SKU: ${PRODUCT.sku}`
+              );
+
+              console.log(
+                PRODUCT.url
+              );
+
 
               const response =
                 await page.goto(
@@ -205,6 +516,7 @@ jobs:
                   }
                 );
 
+
               console.log(
                 `HTTP status: ${
                   response
@@ -213,12 +525,17 @@ jobs:
                 }`
               );
 
-              await page.waitForTimeout(8000);
+
+              await page.waitForTimeout(
+                8000
+              );
+
 
               const title =
                 await page
                   .title()
                   .catch(() => "");
+
 
               const bodyText =
                 await page
@@ -226,13 +543,19 @@ jobs:
                   .innerText()
                   .catch(() => "");
 
+
               const lower =
                 bodyText.toLowerCase();
 
-              console.log(`Title: ${title}`);
+
+              console.log(
+                `Title: ${title}`
+              );
+
               console.log(
                 `Page text length: ${bodyText.length}`
               );
+
 
               const blockedWords = [
                 "access denied",
@@ -243,11 +566,13 @@ jobs:
                 "unusual traffic"
               ];
 
+
               const blocked =
                 blockedWords.some(
                   word =>
                     lower.includes(word)
                 );
+
 
               if (blocked) {
 
@@ -262,6 +587,7 @@ jobs:
                 return;
               }
 
+
               const productVerified =
                 PRODUCT.requiredWords.every(
                   word =>
@@ -269,6 +595,7 @@ jobs:
                       word.toLowerCase()
                     )
                 );
+
 
               if (!productVerified) {
 
@@ -283,40 +610,64 @@ jobs:
                 return;
               }
 
+
               console.log(
                 "✅ Product identity verified."
               );
 
+
               const comingSoon =
-                lower.includes("coming soon");
+                lower.includes(
+                  "coming soon"
+                );
+
 
               const preorderPresent =
-                lower.includes("pre-order") ||
-                lower.includes("preorder");
+                lower.includes(
+                  "pre-order"
+                ) ||
+                lower.includes(
+                  "preorder"
+                );
+
 
               const unavailableText =
-                lower.includes("sold out") ||
-                lower.includes("unavailable");
+                lower.includes(
+                  "sold out"
+                ) ||
+                lower.includes(
+                  "unavailable"
+                );
+
 
               console.log(
                 `Coming Soon: ${comingSoon}`
               );
 
+
               console.log(
                 `Preorder text present: ${preorderPresent}`
               );
+
 
               console.log(
                 `Unavailable text present: ${unavailableText}`
               );
 
+
               const buttons =
-                page.locator("button");
+                page.locator(
+                  "button"
+                );
+
 
               const count =
                 await buttons.count();
 
-              const purchaseButtons = [];
+
+              const purchaseButtons =
+                [];
+
 
               for (
                 let i = 0;
@@ -327,15 +678,22 @@ jobs:
                 const button =
                   buttons.nth(i);
 
+
                 try {
 
-                  if (!(await button.isVisible())) {
+                  if (
+                    !(await button.isVisible())
+                  ) {
                     continue;
                   }
 
-                  if (!(await button.isEnabled())) {
+
+                  if (
+                    !(await button.isEnabled())
+                  ) {
                     continue;
                   }
+
 
                   const text =
                     (
@@ -344,47 +702,73 @@ jobs:
                         .catch(() => "")
                     )
                       .trim()
-                      .replace(/\s+/g, " ")
+                      .replace(
+                        /\s+/g,
+                        " "
+                      )
                       .toLowerCase();
+
 
                   if (!text) {
                     continue;
                   }
 
+
                   const isPurchaseButton =
                     text === "add to cart" ||
-                    text.includes("add to cart") ||
+                    text.includes(
+                      "add to cart"
+                    ) ||
                     text === "pre-order" ||
                     text === "preorder";
+
 
                   if (!isPurchaseButton) {
                     continue;
                   }
 
-                  purchaseButtons.push(text);
+
+                  purchaseButtons.push(
+                    text
+                  );
+
 
                 } catch (_) {}
               }
+
 
               console.log(
                 `Verified purchase button count: ${purchaseButtons.length}`
               );
 
-              if (purchaseButtons.length > 0) {
-                for (const text of purchaseButtons) {
+
+              if (
+                purchaseButtons.length > 0
+              ) {
+
+                for (
+                  const text
+                  of purchaseButtons
+                ) {
+
                   console.log(
                     `🟢 Purchase button found: ${text}`
                   );
                 }
               }
 
+
               const validPurchaseState =
                 purchaseButtons.length === 1 &&
                 !comingSoon &&
                 !unavailableText;
 
+
               const wasAvailable =
-                stockState[PRODUCT.sku] === true;
+                stockState[
+                  PRODUCT.sku
+                ] === true;
+
 
               if (validPurchaseState) {
 
@@ -392,15 +776,18 @@ jobs:
                   `🚨 AVAILABLE: ${PRODUCT.name}`
                 );
 
+
                 if (!wasAvailable) {
 
                   console.log(
                     "🔔 NEW Best Buy restock detected — sending notification."
                   );
 
+
                   await sendNotification(
                     page.url()
                   );
+
 
                 } else {
 
@@ -409,13 +796,18 @@ jobs:
                   );
                 }
 
-                stockState[PRODUCT.sku] = true;
+
+                stockState[
+                  PRODUCT.sku
+                ] = true;
+
 
               } else {
 
                 console.log(
                   `🟡 NOT AVAILABLE: ${PRODUCT.name}`
                 );
+
 
                 if (wasAvailable) {
 
@@ -428,8 +820,12 @@ jobs:
                   );
                 }
 
-                stockState[PRODUCT.sku] = false;
+
+                stockState[
+                  PRODUCT.sku
+                ] = false;
               }
+
 
             } catch (error) {
 
@@ -445,18 +841,30 @@ jobs:
                 "State was NOT changed."
               );
 
+
             } finally {
 
               await browser.close();
+
 
               saveState(
                 stockState
               );
             }
 
-            console.log("========================================");
-            console.log("BEST BUY SCAN COMPLETE");
-            console.log("========================================");
+
+            console.log(
+              "========================================"
+            );
+
+            console.log(
+              "BEST BUY SCAN COMPLETE"
+            );
+
+            console.log(
+              "========================================"
+            );
+
 
           })().catch(error => {
 
@@ -469,6 +877,7 @@ jobs:
           EOF
 
           node check-bestbuy.js
+
 
       - name: Save Best Buy stock state
         if: always()
