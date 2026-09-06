@@ -9,12 +9,6 @@ on:
         default: false
         type: boolean
 
-      simulate_restock:
-        description: "SIMULATE ETB restock for dedupe test"
-        required: false
-        default: false
-        type: boolean
-
   schedule:
     - cron: "*/5 * * * *"
 
@@ -47,132 +41,11 @@ jobs:
 
 
   # ============================================================
-  # SIMULATED RESTOCK DEDUPE TEST
-  # Uses its OWN cache so it cannot interfere with live state.
-  # ============================================================
-
-  simulate-restock:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate_restock }}
-    runs-on: ubuntu-latest
-
-    steps:
-
-      - name: Restore simulated dedupe state
-        uses: actions/cache/restore@v4
-        with:
-          path: .target-stock-state.json
-          key: target-dedupe-state-${{ github.run_id }}
-          restore-keys: |
-            target-dedupe-state-
-
-      - name: Test restock deduplication
-        run: |
-          node <<'EOF'
-          const fs = require("fs");
-
-          const file = ".target-stock-state.json";
-          const testKey = "__dedupe_test_etb";
-
-          let state = {};
-
-          if (fs.existsSync(file)) {
-            try {
-              state = JSON.parse(
-                fs.readFileSync(file, "utf8")
-              );
-            } catch (_) {
-              state = {};
-            }
-          }
-
-          async function runTest() {
-
-            if (state[testKey] === true) {
-
-              console.log(
-                "🔕 TEST: Already alerted for simulated ETB restock — no duplicate notification."
-              );
-
-              console.log(
-                "✅ DEDUPE TEST PASSED."
-              );
-
-              // Reset only the temporary test flag so a future
-              // two-run test can start clean again.
-              state[testKey] = false;
-
-              fs.writeFileSync(
-                file,
-                JSON.stringify(state, null, 2)
-              );
-
-              return;
-            }
-
-
-            console.log(
-              "🔔 TEST: New simulated ETB restock — sending notification."
-            );
-
-            const response = await fetch(
-              "https://ntfy.sh/joshpokemon6685563",
-              {
-                method: "POST",
-
-                headers: {
-                  "Title": "SIMULATED TARGET RESTOCK",
-                  "Priority": "high",
-                  "Tags": "test_tube,pokemon",
-                  "Click": "https://www.target.com/p/-/A-1010892076"
-                },
-
-                body:
-                  "Simulated ETB restock dedupe test. This is NOT a real restock."
-              }
-            );
-
-            console.log(
-              `Test notification response: ${response.status}`
-            );
-
-            if (!response.ok) {
-              throw new Error(
-                `Test notification failed with HTTP ${response.status}`
-              );
-            }
-
-            state[testKey] = true;
-
-            fs.writeFileSync(
-              file,
-              JSON.stringify(state, null, 2)
-            );
-
-            console.log(
-              "✅ TEST state saved as alerted."
-            );
-          }
-
-          runTest().catch(error => {
-            console.error(error);
-            process.exit(1);
-          });
-          EOF
-
-      - name: Save simulated dedupe state
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .target-stock-state.json
-          key: target-dedupe-state-${{ github.run_id }}
-
-
-  # ============================================================
   # LIVE TARGET MONITOR
   # ============================================================
 
   check-target:
-    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.test_alert && !inputs.simulate_restock) }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_alert }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -259,9 +132,11 @@ jobs:
             try {
 
               if (!fs.existsSync(STATE_FILE)) {
+
                 console.log(
                   "No previous stock state found."
                 );
+
                 return {};
               }
 
@@ -309,30 +184,32 @@ jobs:
 
           async function sendNotification(product, url) {
 
-            const response = await fetch(
-              `https://ntfy.sh/${NTFY_TOPIC}`,
-              {
-                method: "POST",
+            const response =
+              await fetch(
+                `https://ntfy.sh/${NTFY_TOPIC}`,
+                {
+                  method: "POST",
 
-                headers: {
-                  "Title": "TARGET POKEMON RESTOCK",
-                  "Priority": "urgent",
-                  "Tags": "rotating_light,pokemon",
-                  "Click": url
-                },
+                  headers: {
+                    "Title": "TARGET POKEMON RESTOCK",
+                    "Priority": "urgent",
+                    "Tags": "rotating_light,pokemon",
+                    "Click": url
+                  },
 
-                body:
-                  `${product.name} may be IN STOCK at Target!\n\n` +
-                  `${product.id}\n\n` +
-                  `Tap this notification to open Target.`
-              }
-            );
+                  body:
+                    `${product.name} may be IN STOCK at Target!\n\n` +
+                    `${product.id}\n\n` +
+                    `Tap this notification to open Target.`
+                }
+              );
 
             console.log(
               `Notification sent for ${product.name}: ${response.status}`
             );
 
             if (!response.ok) {
+
               throw new Error(
                 `Notification failed with HTTP ${response.status}`
               );
@@ -430,7 +307,9 @@ jobs:
                 );
 
 
-                await page.waitForTimeout(7000);
+                await page.waitForTimeout(
+                  7000
+                );
 
 
                 const title =
@@ -538,11 +417,14 @@ jobs:
                     .locator("button")
                     .all();
 
-                const matchingButtons = [];
+
+                const matchingButtons =
+                  [];
 
 
                 for (
-                  const button of candidateButtons
+                  const button
+                  of candidateButtons
                 ) {
 
                   try {
@@ -552,6 +434,7 @@ jobs:
                     ) {
                       continue;
                     }
+
 
                     if (
                       !(await button.isEnabled())
@@ -628,6 +511,7 @@ jobs:
 
                               return {
                                 verified: true,
+
                                 nearbyText:
                                   nearbyText.slice(
                                     0,
@@ -647,6 +531,7 @@ jobs:
                             nearbyText: ""
                           };
                         },
+
                         product.words
                       );
 
@@ -848,6 +733,7 @@ jobs:
             console.error(error);
 
             process.exit(1);
+
           });
 
           EOF
