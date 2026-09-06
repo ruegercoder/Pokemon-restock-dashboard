@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.7.3-test
-// @description  Detect real Target ETB Add to Cart button - NO CLICK TEST
+// @version      2.8.0
+// @description  Target 30th Celebration ETB safe auto-add watcher
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -20,6 +20,8 @@
     ];
 
     const CHECK_INTERVAL = 1500;
+
+    let alreadyClicked = false;
 
     function createStatusBox() {
         let box = document.getElementById("pokemon-target-status");
@@ -67,6 +69,7 @@
         return Array.from(
             document.querySelectorAll("h1")
         ).find(el => {
+
             const text = (
                 el.innerText ||
                 el.textContent ||
@@ -76,36 +79,73 @@
             return REQUIRED_WORDS.every(word =>
                 text.includes(word)
             );
+
         }) || null;
     }
 
-    function clearHighlights() {
-        document
-            .querySelectorAll("[data-pokemon-real-button]")
-            .forEach(el => {
-                el.style.outline = "";
-                el.removeAttribute(
-                    "data-pokemon-real-button"
-                );
-            });
-    }
-
-    function highlightButton(button) {
-        clearHighlights();
-
-        button.style.outline =
-            "5px solid lime";
-
-        button.setAttribute(
-            "data-pokemon-real-button",
-            "true"
-        );
-    }
-
     /*
-     * Find ALL Add to cart buttons, including disabled ones.
+     * HARD SOLD-OUT LOCK.
+     *
+     * Target currently shows "Sold out"
+     * close to the ETB title.
+     *
+     * If that message exists, clicking is forbidden.
      */
-    function getAddToCartButtons() {
+    function mainProductIsSoldOut() {
+
+        const title = findProductTitle();
+
+        if (!title) {
+            return true;
+        }
+
+        const titleY =
+            title.getBoundingClientRect().top +
+            window.scrollY;
+
+        const elements = Array.from(
+            document.querySelectorAll(
+                "div, span, p"
+            )
+        );
+
+        for (const el of elements) {
+
+            const text = (
+                el.innerText ||
+                el.textContent ||
+                ""
+            )
+                .trim()
+                .toLowerCase();
+
+            if (
+                text !== "sold out" &&
+                text !== "out of stock"
+            ) {
+                continue;
+            }
+
+            const y =
+                el.getBoundingClientRect().top +
+                window.scrollY;
+
+            const distance =
+                Math.abs(y - titleY);
+
+            /*
+             * Main product stock wording only.
+             */
+            if (distance < 650) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function getVisibleAddToCartButtons() {
+
         return Array.from(
             document.querySelectorAll("button")
         ).filter(button => {
@@ -129,18 +169,21 @@
     }
 
     /*
-     * Score each Add to Cart button based on nearby
-     * evidence that it belongs to THIS ETB.
+     * Score evidence around a button.
      *
-     * We are no longer using only title distance.
+     * Strong preference is given to DOM areas
+     * containing the actual ETB title.
      */
     function scoreButton(button) {
 
         let score = 0;
-
         let node = button;
 
-        for (let depth = 0; depth < 8 && node; depth++) {
+        for (
+            let depth = 0;
+            depth < 10 && node;
+            depth++
+        ) {
 
             const text = (
                 node.innerText ||
@@ -148,28 +191,32 @@
                 ""
             ).toLowerCase();
 
-            if (text.includes("69.99")) {
-                score += 4;
+            if (
+                text.includes("30th") &&
+                text.includes("celebration")
+            ) {
+                score += 8;
+            }
+
+            if (
+                text.includes(
+                    "elite trainer box"
+                )
+            ) {
+                score += 8;
+            }
+
+            if (
+                text.includes("69.99")
+            ) {
+                score += 2;
             }
 
             if (
                 text.includes("out of stock") ||
                 text.includes("sold out")
             ) {
-                score += 5;
-            }
-
-            if (
-                text.includes("30th") &&
-                text.includes("celebration")
-            ) {
-                score += 6;
-            }
-
-            if (
-                text.includes("elite trainer box")
-            ) {
-                score += 6;
+                score += 2;
             }
 
             node = node.parentElement;
@@ -178,49 +225,96 @@
         return score;
     }
 
+    /*
+     * Locate ONLY the real main-product button.
+     *
+     * Recommendation buttons farther down the page
+     * are rejected by both location and product evidence.
+     */
     function findRealEtbButton() {
 
+        const title = findProductTitle();
+
+        if (!title) {
+            return null;
+        }
+
+        const titleRect =
+            title.getBoundingClientRect();
+
+        const titleY =
+            titleRect.top +
+            window.scrollY;
+
         const buttons =
-            getAddToCartButtons();
+            getVisibleAddToCartButtons();
 
-        if (!buttons.length) {
+        const candidates =
+            buttons.map(button => {
+
+                const rect =
+                    button.getBoundingClientRect();
+
+                const buttonY =
+                    rect.top +
+                    window.scrollY;
+
+                const distance =
+                    buttonY - titleY;
+
+                return {
+                    button,
+                    distance,
+                    score: scoreButton(button)
+                };
+
+            }).filter(item => {
+
+                /*
+                 * Real Target purchase button is below
+                 * the main title/product image.
+                 *
+                 * Buttons much farther down are likely
+                 * recommendation products.
+                 */
+                return (
+                    item.distance > 0 &&
+                    item.distance < 2300
+                );
+            });
+
+        if (!candidates.length) {
             return null;
         }
 
-        const scored =
-            buttons.map(button => ({
-                button,
-                score: scoreButton(button)
-            }));
+        candidates.sort((a, b) => {
 
-        scored.sort(
-            (a, b) =>
-                b.score - a.score
-        );
+            if (b.score !== a.score) {
+                return b.score - a.score;
+            }
 
-        const best =
-            scored[0];
+            return a.distance - b.distance;
+        });
+
+        const best = candidates[0];
 
         /*
-         * Require strong evidence.
-         * Recommendation buttons should score much lower.
+         * Refuse to act if another button has the
+         * exact same score and nearly the same distance.
          */
-        if (!best || best.score < 5) {
-            return null;
-        }
+        const ambiguous =
+            candidates.slice(1).some(item => {
 
-        /*
-         * Extra safety:
-         * if two buttons tie for highest score,
-         * refuse to choose.
-         */
-        const tied =
-            scored.filter(
-                item =>
-                    item.score === best.score
-            );
+                return (
+                    item.score === best.score &&
+                    Math.abs(
+                        item.distance -
+                        best.distance
+                    ) < 350
+                );
+            });
 
-        if (tied.length !== 1) {
+        if (ambiguous) {
             return null;
         }
 
@@ -229,9 +323,13 @@
 
     function checkStock() {
 
+        /*
+         * LOCK 1:
+         * Must be exact product URL.
+         */
         if (!isCorrectURL()) {
 
-            clearHighlights();
+            alreadyClicked = false;
 
             setStatus(
                 "⚪ WRONG PRODUCT — NOT ACTIVE"
@@ -240,12 +338,13 @@
             return;
         }
 
-        const title =
-            findProductTitle();
+        /*
+         * LOCK 2:
+         * Must find exact ETB title.
+         */
+        const title = findProductTitle();
 
         if (!title) {
-
-            clearHighlights();
 
             setStatus(
                 "🔎 WAITING FOR TARGET PRODUCT"
@@ -254,40 +353,134 @@
             return;
         }
 
+        /*
+         * LOCK 3:
+         * Sold-out message forbids clicking.
+         */
+        if (mainProductIsSoldOut()) {
+
+            alreadyClicked = false;
+
+            setStatus(
+                "🟡 SOLD OUT — WATCHING"
+            );
+
+            return;
+        }
+
+        /*
+         * Find our already-tested real ETB button.
+         */
         const button =
             findRealEtbButton();
 
         if (!button) {
 
-            clearHighlights();
-
             setStatus(
-                "🟠 REAL ETB BUTTON NOT LOCATED YET"
+                "🟠 STOCK CHANGED — SAFE ETB BUTTON NOT CONFIRMED"
             );
 
             return;
         }
 
-        highlightButton(button);
+        /*
+         * Disabled button = definitely don't click.
+         */
+        if (
+            button.disabled ||
+            button.getAttribute(
+                "aria-disabled"
+            ) === "true"
+        ) {
 
-        if (button.disabled) {
+            alreadyClicked = false;
 
             setStatus(
-                "✅ REAL ETB BUTTON LOCATED — CURRENTLY DISABLED"
+                "🟡 ETB BUTTON DISABLED — WATCHING"
             );
 
             return;
         }
+
+        /*
+         * LOCK 4:
+         * Recheck sold-out status immediately
+         * before the click.
+         */
+        if (mainProductIsSoldOut()) {
+
+            alreadyClicked = false;
+
+            setStatus(
+                "🛑 CLICK BLOCKED — SOLD OUT"
+            );
+
+            return;
+        }
+
+        /*
+         * LOCK 5:
+         * Never click twice.
+         */
+        if (alreadyClicked) {
+
+            setStatus(
+                "✅ ETB ADD TO CART CLICK SENT"
+            );
+
+            return;
+        }
+
+        /*
+         * FINAL BUTTON TEXT CHECK.
+         */
+        const buttonText = (
+            button.innerText ||
+            button.textContent ||
+            ""
+        )
+            .trim()
+            .toLowerCase();
+
+        if (
+            !buttonText.startsWith(
+                "add to cart"
+            )
+        ) {
+
+            setStatus(
+                "🛑 CLICK BLOCKED — BUTTON CHANGED"
+            );
+
+            return;
+        }
+
+        /*
+         * Everything passed.
+         *
+         * Click THIS exact verified button once.
+         */
+        alreadyClicked = true;
 
         setStatus(
-            "🟢 REAL ETB BUTTON LOCATED — ENABLED — NO CLICK"
+            "🟢 ETB AVAILABLE — ADDING TO CART"
         );
+
+        button.click();
+
+        setTimeout(() => {
+
+            setStatus(
+                "✅ ETB ADD TO CART CLICK SENT"
+            );
+
+        }, 800);
     }
 
     createStatusBox();
 
     setStatus(
-        "🔎 STARTING v2.7.3 REAL BUTTON TEST"
+        "🔎 STARTING TARGET ETB WATCH"
     );
 
     setTimeout(
