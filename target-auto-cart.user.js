@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.7.1-test
-// @description  Target ETB simulated in-stock safety test - NO REAL CLICK
+// @version      2.7.2-test
+// @description  Target ETB scoped fake-button detection test - NO REAL CLICK
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -73,6 +73,12 @@
                     simulateInStock
                         ? "STOP TEST"
                         : "TEST IN-STOCK";
+
+                if (simulateInStock) {
+                    createFakeEtbButton();
+                } else {
+                    removeFakeEtbButton();
+                }
 
                 checkStock();
             });
@@ -168,6 +174,74 @@
         }
 
         return false;
+    }
+
+    function createFakeEtbButton() {
+
+        if (
+            document.getElementById(
+                "pokemon-fake-etb-cart"
+            )
+        ) {
+            return;
+        }
+
+        const title = findProductTitle();
+
+        if (!title) {
+            return;
+        }
+
+        const fakeButton =
+            document.createElement("button");
+
+        fakeButton.id =
+            "pokemon-fake-etb-cart";
+
+        fakeButton.textContent =
+            "Add to Cart — TEST";
+
+        fakeButton.style.cssText = `
+            display:block;
+            margin-top:16px;
+            margin-bottom:16px;
+            padding:14px 20px;
+            background:#ffd500;
+            color:#111;
+            border:3px dashed #111;
+            border-radius:10px;
+            font-size:16px;
+            font-weight:bold;
+        `;
+
+        fakeButton.addEventListener(
+            "click",
+            event => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                setStatus(
+                    "🧪 FAKE BUTTON PRESSED — NO TARGET ACTION"
+                );
+            }
+        );
+
+        title.insertAdjacentElement(
+            "afterend",
+            fakeButton
+        );
+    }
+
+    function removeFakeEtbButton() {
+
+        const fakeButton =
+            document.getElementById(
+                "pokemon-fake-etb-cart"
+            );
+
+        if (fakeButton) {
+            fakeButton.remove();
+        }
     }
 
     function findScopedAddToCartButton() {
@@ -272,6 +346,7 @@
         if (!isCorrectURL()) {
 
             clearTestHighlights();
+            removeFakeEtbButton();
 
             setStatus(
                 "⚪ WRONG PRODUCT — NOT ACTIVE"
@@ -293,9 +368,6 @@
             return;
         }
 
-        /*
-         * NORMAL MODE
-         */
         if (!simulateInStock) {
 
             if (mainProductIsSoldOut()) {
@@ -310,11 +382,10 @@
             }
         }
 
-        /*
-         * TEST MODE:
-         * Temporarily ignore the sold-out message.
-         * We still DO NOT CLICK anything.
-         */
+        if (simulateInStock) {
+            createFakeEtbButton();
+        }
+
         const button =
             findScopedAddToCartButton();
 
@@ -339,9 +410,18 @@
 
         if (simulateInStock) {
 
-            setStatus(
-                "🧪 TEST MODE — SAFE BUTTON FOUND"
-            );
+            if (
+                button.id ===
+                "pokemon-fake-etb-cart"
+            ) {
+                setStatus(
+                    "✅ TEST PASSED — FAKE ETB BUTTON FOUND"
+                );
+            } else {
+                setStatus(
+                    "🛑 TEST FAILED — WRONG BUTTON FOUND"
+                );
+            }
 
             return;
         }
@@ -354,7 +434,7 @@
     createStatusBox();
 
     setStatus(
-        "🔎 STARTING v2.7.1 TEST"
+        "🔎 STARTING v2.7.2 TEST"
     );
 
     setTimeout(
