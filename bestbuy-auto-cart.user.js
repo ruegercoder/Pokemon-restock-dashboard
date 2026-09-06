@@ -1,793 +1,638 @@
-// ==UserScript==
-// @name         Best Buy Pokemon Auto Add
-// @namespace    pokemon-restock-dashboard
-// @version      1.2.0
-// @description  Safely watches approved Best Buy Pokemon product and retries Add to Cart until confirmed or retry limit reached.
-// @match        https://www.bestbuy.com/product/*
-// @grant        none
-// @run-at       document-idle
-// ==/UserScript==
+name: Best Buy Pokémon Cloud Monitor
 
-(function () {
-    "use strict";
+on:
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Send a TEST notification only"
+        required: false
+        default: false
+        type: boolean
 
-    // ============================================================
-    // APPROVED PRODUCT
-    // ============================================================
+  schedule:
+    - cron: "*/5 * * * *"
 
-    const PRODUCT = {
-        sku: "6685563",
-        slugPart: "JJG2TL8254",
-        name: "30th Celebration Ultra-Premium Collection",
+concurrency:
+  group: bestbuy-pokemon-cloud-monitor
+  cancel-in-progress: false
 
-        requiredWords: [
-            "30th celebration",
-            "ultra premium collection"
-        ]
-    };
+jobs:
 
-    const STATUS_ID = "bestbuy-pokemon-status";
+  # ============================================================
+  # SIMPLE NOTIFICATION TEST
+  # ============================================================
 
-    const CHECK_INTERVAL = 1500;
+  test-alert:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
+    runs-on: ubuntu-latest
 
-    const MAX_ADD_ATTEMPTS = 5;
+    steps:
+      - name: Send Best Buy monitor test notification
+        run: |
+          curl -fsS --max-time 20 \
+            -H "Title: Best Buy Pokemon Monitor Test" \
+            -H "Priority: high" \
+            -H "Tags: test_tube,pokemon" \
+            -H "Click: https://www.bestbuy.com/product/pokemon-trading-card-game-30th-celebration-ultra-premium-collection-day-or-night-1-ultra-premium-collection-per-order-styles-may-vary/JJG2TL8254" \
+            -d "Best Buy cloud monitoring and notifications are working. Tap to open the product page." \
+            "https://ntfy.sh/joshpokemon6685563"
 
-    const RETRY_DELAY = 1800;
-
-    let addInProgress = false;
-    let successfullyAdded = false;
-    let attempts = 0;
-    let startingCartCount = null;
-
-
-    // ============================================================
-    // TEXT HELPERS
-    // ============================================================
-
-    function normalize(text) {
-        return (text || "")
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-    }
+          echo "✅ Test notification sent"
 
 
-    function pageText() {
-        return normalize(
-            document.body?.innerText || ""
-        );
-    }
+  # ============================================================
+  # LIVE BEST BUY MONITOR
+  # ============================================================
+
+  check-bestbuy:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_alert }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
 
-    // ============================================================
-    // STATUS BANNER
-    // ============================================================
+      - name: Restore previous Best Buy stock state
+        uses: actions/cache/restore@v4
+        with:
+          path: .bestbuy-stock-state.json
+          key: bestbuy-stock-state-${{ github.run_id }}
+          restore-keys: |
+            bestbuy-stock-state-
 
-    function createStatusBox() {
-        let box =
-            document.getElementById(
-                STATUS_ID
-            );
 
-        if (!box) {
-            box =
-                document.createElement(
-                    "div"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+
+      - name: Check Best Buy Pokémon product
+        run: |
+          cat > check-bestbuy.js <<'EOF'
+
+          const { chromium } = require("playwright");
+          const fs = require("fs");
+
+          const STATE_FILE = ".bestbuy-stock-state.json";
+          const NTFY_TOPIC = "joshpokemon6685563";
+
+          const PRODUCT = {
+            name: "Pokémon TCG 30th Celebration Ultra-Premium Collection",
+            sku: "6685563",
+            url: "https://www.bestbuy.com/product/pokemon-trading-card-game-30th-celebration-ultra-premium-collection-day-or-night-1-ultra-premium-collection-per-order-styles-may-vary/JJG2TL8254",
+
+            requiredWords: [
+              "30th celebration",
+              "ultra-premium collection",
+              "6685563"
+            ]
+          };
+
+
+          function loadState() {
+
+            try {
+
+              if (!fs.existsSync(STATE_FILE)) {
+
+                console.log(
+                  "No previous Best Buy stock state found."
                 );
 
-            box.id =
-                STATUS_ID;
-
-            box.style.cssText = `
-                position: fixed;
-                top: 15px;
-                left: 50%;
-                transform: translateX(-50%);
-                z-index: 999999;
-                background: #111;
-                color: #fff;
-                padding: 12px 16px;
-                border-radius: 14px;
-                font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
-                font-size: 14px;
-                font-weight: 700;
-                text-align: center;
-                max-width: 90vw;
-                box-shadow: 0 4px 14px rgba(0,0,0,.28);
-            `;
-
-            document.body.appendChild(
-                box
-            );
-        }
-
-        return box;
-    }
+                return {};
+              }
 
 
-    function setStatus(
-        text,
-        background = "#111"
-    ) {
-        const box =
-            createStatusBox();
-
-        box.textContent =
-            text;
-
-        box.style.background =
-            background;
-    }
+              const state =
+                JSON.parse(
+                  fs.readFileSync(
+                    STATE_FILE,
+                    "utf8"
+                  )
+                );
 
 
-    // ============================================================
-    // VERIFY URL
-    // ============================================================
-
-    function isCorrectUrl() {
-        const url =
-            window.location.href
-                .toLowerCase();
-
-        return (
-            url.includes(
-                PRODUCT.slugPart
-                    .toLowerCase()
-            ) ||
-            url.includes(
-                PRODUCT.sku
-            )
-        );
-    }
+              console.log(
+                "✅ Previous Best Buy stock state loaded."
+              );
 
 
-    // ============================================================
-    // VERIFY PRODUCT
-    // ============================================================
-
-    function verifyProduct() {
-        if (!isCorrectUrl()) {
-            return false;
-        }
-
-        const text =
-            pageText();
-
-        const wordsVerified =
-            PRODUCT.requiredWords.every(
-                word =>
-                    text.includes(
-                        normalize(word)
-                    )
-            );
-
-        const skuVerified =
-            text.includes(
-                PRODUCT.sku
-            );
-
-        return (
-            wordsVerified &&
-            skuVerified
-        );
-    }
+              return state;
 
 
-    // ============================================================
-    // HARD UNAVAILABLE LOCK
-    // ============================================================
+            } catch (error) {
 
-    function getUnavailableState() {
-        const text =
-            pageText();
+              console.log(
+                "⚠️ Could not read previous Best Buy state."
+              );
 
-        if (
-            text.includes(
-                "coming soon"
-            )
-        ) {
-            return "COMING SOON";
-        }
-
-        if (
-            text.includes(
-                "sold out"
-            )
-        ) {
-            return "SOLD OUT";
-        }
-
-        if (
-            text.includes(
-                "currently unavailable"
-            ) ||
-            text.includes(
-                "unavailable"
-            )
-        ) {
-            return "UNAVAILABLE";
-        }
-
-        return null;
-    }
-
-
-    // ============================================================
-    // BUTTON VISIBILITY
-    // ============================================================
-
-    function isVisible(
-        element
-    ) {
-        if (!element) {
-            return false;
-        }
-
-        const style =
-            window.getComputedStyle(
-                element
-            );
-
-        const rect =
-            element.getBoundingClientRect();
-
-        return (
-            style.display !== "none" &&
-            style.visibility !== "hidden" &&
-            rect.width > 0 &&
-            rect.height > 0
-        );
-    }
-
-
-    // ============================================================
-    // VERIFY BUTTON BELONGS TO MAIN PRODUCT
-    // ============================================================
-
-    function buttonBelongsToProduct(
-        button
-    ) {
-        let node =
-            button;
-
-        for (
-            let depth = 0;
-            depth < 10;
-            depth++
-        ) {
-            if (!node) {
-                break;
+              return {};
             }
-
-            const nearbyText =
-                normalize(
-                    node.innerText || ""
-                );
-
-            const wordsMatch =
-                PRODUCT.requiredWords.every(
-                    word =>
-                        nearbyText.includes(
-                            normalize(word)
-                        )
-                );
-
-            const skuMatch =
-                nearbyText.includes(
-                    PRODUCT.sku
-                );
-
-            if (
-                wordsMatch &&
-                skuMatch
-            ) {
-                return true;
-            }
-
-            node =
-                node.parentElement;
-        }
-
-        return false;
-    }
+          }
 
 
-    // ============================================================
-    // FIND SAFE ADD TO CART BUTTON
-    // ============================================================
+          function saveState(state) {
 
-    function findSafeAddToCart() {
-        const buttons =
-            Array.from(
-                document.querySelectorAll(
-                    "button"
-                )
+            fs.writeFileSync(
+              STATE_FILE,
+              JSON.stringify(
+                state,
+                null,
+                2
+              )
             );
 
-        const candidates =
-            buttons.filter(
-                button => {
-                    if (
-                        !isVisible(button)
-                    ) {
-                        return false;
-                    }
 
-                    if (
-                        button.disabled ||
-                        button.getAttribute(
-                            "aria-disabled"
-                        ) === "true"
-                    ) {
-                        return false;
-                    }
+            console.log(
+              "✅ Best Buy stock state saved."
+            );
+          }
 
-                    const text =
-                        normalize(
-                            button.innerText ||
-                            button.textContent ||
-                            ""
-                        );
 
-                    const validText =
-                        text ===
-                            "add to cart" ||
-                        text.includes(
-                            "add to cart"
-                        );
+          async function sendNotification(url) {
 
-                    if (!validText) {
-                        return false;
-                    }
+            const response =
+              await fetch(
+                `https://ntfy.sh/${NTFY_TOPIC}`,
+                {
+                  method: "POST",
 
-                    return (
-                        buttonBelongsToProduct(
-                            button
-                        )
-                    );
+                  headers: {
+                    "Title": "BEST BUY POKEMON RESTOCK",
+                    "Priority": "urgent",
+                    "Tags": "rotating_light,pokemon",
+                    "Click": url
+                  },
+
+                  body:
+                    `${PRODUCT.name} may be available at Best Buy!\n\n` +
+                    `SKU ${PRODUCT.sku}\n\n` +
+                    `Tap this notification to open Best Buy.`
                 }
+              );
+
+
+            console.log(
+              `Notification sent: ${response.status}`
             );
 
-        if (
-            candidates.length !== 1
-        ) {
-            return {
-                button: null,
-                count:
-                    candidates.length
-            };
-        }
 
-        return {
-            button:
-                candidates[0],
-            count: 1
-        };
-    }
+            if (!response.ok) {
 
-
-    // ============================================================
-    // CART COUNT
-    // ============================================================
-
-    function getCartCount() {
-        const possibleSelectors = [
-            '[aria-label*="cart" i]',
-            '[data-testid*="cart" i]',
-            '[class*="cart-count" i]',
-            '[class*="cartCount" i]',
-            '[class*="cart-item-count" i]'
-        ];
-
-        for (
-            const selector
-            of possibleSelectors
-        ) {
-            const elements =
-                document.querySelectorAll(
-                    selector
-                );
-
-            for (
-                const element
-                of elements
-            ) {
-                const text =
-                    (
-                        element.getAttribute(
-                            "aria-label"
-                        ) ||
-                        element.textContent ||
-                        ""
-                    );
-
-                const match =
-                    text.match(
-                        /\b(\d+)\b/
-                    );
-
-                if (match) {
-                    const number =
-                        Number(
-                            match[1]
-                        );
-
-                    if (
-                        Number.isFinite(
-                            number
-                        )
-                    ) {
-                        return number;
-                    }
-                }
+              throw new Error(
+                `Notification failed with HTTP ${response.status}`
+              );
             }
-        }
-
-        return null;
-    }
+          }
 
 
-    // ============================================================
-    // SUCCESS DETECTION
-    // ============================================================
+          (async () => {
 
-    function cartSuccessDetected() {
-        const text =
-            pageText();
-
-        const successPhrases = [
-            "added to cart",
-            "item added to cart",
-            "added to your cart",
-            "view cart",
-            "go to cart"
-        ];
-
-        if (
-            successPhrases.some(
-                phrase =>
-                    text.includes(
-                        phrase
-                    )
-            )
-        ) {
-            return true;
-        }
-
-
-        const buttons =
-            Array.from(
-                document.querySelectorAll(
-                    "button, a"
-                )
+            console.log(
+              "========================================"
             );
 
-        const changedButton =
-            buttons.some(
-                element => {
-                    if (
-                        !isVisible(
-                            element
-                        )
-                    ) {
-                        return false;
-                    }
-
-                    const text =
-                        normalize(
-                            element.innerText ||
-                            element.textContent ||
-                            ""
-                        );
-
-                    return (
-                        text === "view cart" ||
-                        text === "go to cart" ||
-                        text === "in cart"
-                    );
-                }
+            console.log(
+              "BEST BUY POKÉMON CLOUD MONITOR"
             );
 
-        if (changedButton) {
-            return true;
-        }
-
-
-        const currentCartCount =
-            getCartCount();
-
-        if (
-            startingCartCount !== null &&
-            currentCartCount !== null &&
-            currentCartCount >
-                startingCartCount
-        ) {
-            return true;
-        }
-
-        return false;
-    }
-
-
-    // ============================================================
-    // WAIT
-    // ============================================================
-
-    function sleep(ms) {
-        return new Promise(
-            resolve =>
-                setTimeout(
-                    resolve,
-                    ms
-                )
-        );
-    }
-
-
-    // ============================================================
-    // ADD WITH RETRIES
-    // ============================================================
-
-    async function attemptAddToCart() {
-        if (
-            addInProgress ||
-            successfullyAdded
-        ) {
-            return;
-        }
-
-        addInProgress =
-            true;
-
-        attempts =
-            0;
-
-        startingCartCount =
-            getCartCount();
-
-
-        while (
-            attempts <
-            MAX_ADD_ATTEMPTS
-        ) {
-
-            // ----------------------------------------------------
-            // REVERIFY EVERYTHING BEFORE EVERY CLICK
-            // ----------------------------------------------------
-
-            if (!verifyProduct()) {
-                setStatus(
-                    "🔒 PRODUCT VERIFICATION LOST — STOPPED",
-                    "#7a1f1f"
-                );
-
-                break;
-            }
-
-
-            const unavailable =
-                getUnavailableState();
-
-            if (unavailable) {
-                setStatus(
-                    `🟡 ${PRODUCT.name} — ${unavailable} — WATCHING`,
-                    "#8a6d00"
-                );
-
-                break;
-            }
-
-
-            if (
-                cartSuccessDetected()
-            ) {
-                successfullyAdded =
-                    true;
-
-                setStatus(
-                    `✅ ${PRODUCT.name} — IN CART`,
-                    "#166534"
-                );
-
-                break;
-            }
-
-
-            const result =
-                findSafeAddToCart();
-
-
-            if (
-                result.count > 1
-            ) {
-                setStatus(
-                    `🔒 ${PRODUCT.name} — MULTIPLE VERIFIED ADD BUTTONS — STOPPED`,
-                    "#7a1f1f"
-                );
-
-                break;
-            }
-
-
-            if (!result.button) {
-                setStatus(
-                    `🟡 ${PRODUCT.name} — WAITING FOR VERIFIED ADD TO CART`,
-                    "#8a6d00"
-                );
-
-                break;
-            }
-
-
-            attempts++;
-
-
-            setStatus(
-                `🟢 ADDING TO CART — ATTEMPT ${attempts}/${MAX_ADD_ATTEMPTS}`,
-                "#146c2e"
+            console.log(
+              "========================================"
             );
+
+
+            const stockState =
+              loadState();
+
+
+            const browser =
+              await chromium.launch({
+                headless: true
+              });
+
+
+            const context =
+              await browser.newContext({
+
+                userAgent:
+                  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) " +
+                  "AppleWebKit/605.1.15 (KHTML, like Gecko) " +
+                  "Version/18.0 Mobile/15E148 Safari/604.1",
+
+                viewport: {
+                  width: 390,
+                  height: 844
+                },
+
+                locale: "en-US"
+              });
+
+
+            const page =
+              await context.newPage();
 
 
             try {
-                result.button.click();
-            } catch (_) {
-                setStatus(
-                    "🔒 ADD TO CART CLICK FAILED",
-                    "#7a1f1f"
+
+              console.log(
+                `Checking: ${PRODUCT.name}`
+              );
+
+              console.log(
+                `SKU: ${PRODUCT.sku}`
+              );
+
+              console.log(
+                PRODUCT.url
+              );
+
+
+              const response =
+                await page.goto(
+                  PRODUCT.url,
+                  {
+                    waitUntil: "domcontentloaded",
+                    timeout: 60000
+                  }
                 );
 
-                break;
+
+              console.log(
+                `HTTP status: ${
+                  response
+                    ? response.status()
+                    : "unknown"
+                }`
+              );
+
+
+              await page.waitForTimeout(
+                8000
+              );
+
+
+              const title =
+                await page
+                  .title()
+                  .catch(() => "");
+
+
+              const bodyText =
+                await page
+                  .locator("body")
+                  .innerText()
+                  .catch(() => "");
+
+
+              const lower =
+                bodyText.toLowerCase();
+
+
+              console.log(
+                `Title: ${title}`
+              );
+
+              console.log(
+                `Page text length: ${bodyText.length}`
+              );
+
+
+              const blockedWords = [
+                "access denied",
+                "verify you are human",
+                "captcha",
+                "automated access",
+                "robot",
+                "unusual traffic"
+              ];
+
+
+              const blocked =
+                blockedWords.some(
+                  word =>
+                    lower.includes(word)
+                );
+
+
+              if (blocked) {
+
+                console.log(
+                  "⚠️ Best Buy returned a blocked/challenge page."
+                );
+
+                console.log(
+                  "State was NOT changed."
+                );
+
+                return;
+              }
+
+
+              const productVerified =
+                PRODUCT.requiredWords.every(
+                  word =>
+                    lower.includes(
+                      word.toLowerCase()
+                    )
+                );
+
+
+              if (!productVerified) {
+
+                console.log(
+                  "🔒 Product identity verification failed."
+                );
+
+                console.log(
+                  "State was NOT changed."
+                );
+
+                return;
+              }
+
+
+              console.log(
+                "✅ Product identity verified."
+              );
+
+
+              const comingSoon =
+                lower.includes(
+                  "coming soon"
+                );
+
+
+              const preorderPresent =
+                lower.includes(
+                  "pre-order"
+                ) ||
+                lower.includes(
+                  "preorder"
+                );
+
+
+              const unavailableText =
+                lower.includes(
+                  "sold out"
+                ) ||
+                lower.includes(
+                  "unavailable"
+                );
+
+
+              console.log(
+                `Coming Soon: ${comingSoon}`
+              );
+
+
+              console.log(
+                `Preorder text present: ${preorderPresent}`
+              );
+
+
+              console.log(
+                `Unavailable text present: ${unavailableText}`
+              );
+
+
+              const buttons =
+                page.locator(
+                  "button"
+                );
+
+
+              const count =
+                await buttons.count();
+
+
+              const purchaseButtons =
+                [];
+
+
+              for (
+                let i = 0;
+                i < count;
+                i++
+              ) {
+
+                const button =
+                  buttons.nth(i);
+
+
+                try {
+
+                  if (
+                    !(await button.isVisible())
+                  ) {
+                    continue;
+                  }
+
+
+                  if (
+                    !(await button.isEnabled())
+                  ) {
+                    continue;
+                  }
+
+
+                  const text =
+                    (
+                      await button
+                        .innerText()
+                        .catch(() => "")
+                    )
+                      .trim()
+                      .replace(
+                        /\s+/g,
+                        " "
+                      )
+                      .toLowerCase();
+
+
+                  if (!text) {
+                    continue;
+                  }
+
+
+                  const isPurchaseButton =
+                    text === "add to cart" ||
+                    text.includes(
+                      "add to cart"
+                    ) ||
+                    text === "pre-order" ||
+                    text === "preorder";
+
+
+                  if (!isPurchaseButton) {
+                    continue;
+                  }
+
+
+                  purchaseButtons.push(
+                    text
+                  );
+
+
+                } catch (_) {}
+              }
+
+
+              console.log(
+                `Verified purchase button count: ${purchaseButtons.length}`
+              );
+
+
+              if (
+                purchaseButtons.length > 0
+              ) {
+
+                for (
+                  const text
+                  of purchaseButtons
+                ) {
+
+                  console.log(
+                    `🟢 Purchase button found: ${text}`
+                  );
+                }
+              }
+
+
+              const validPurchaseState =
+                purchaseButtons.length === 1 &&
+                !comingSoon &&
+                !unavailableText;
+
+
+              const wasAvailable =
+                stockState[
+                  PRODUCT.sku
+                ] === true;
+
+
+              if (validPurchaseState) {
+
+                console.log(
+                  `🚨 AVAILABLE: ${PRODUCT.name}`
+                );
+
+
+                if (!wasAvailable) {
+
+                  console.log(
+                    "🔔 NEW Best Buy restock detected — sending notification."
+                  );
+
+
+                  await sendNotification(
+                    page.url()
+                  );
+
+
+                } else {
+
+                  console.log(
+                    "🔕 Already alerted for this Best Buy restock."
+                  );
+                }
+
+
+                stockState[
+                  PRODUCT.sku
+                ] = true;
+
+
+              } else {
+
+                console.log(
+                  `🟡 NOT AVAILABLE: ${PRODUCT.name}`
+                );
+
+
+                if (wasAvailable) {
+
+                  console.log(
+                    "♻️ Product returned to unavailable."
+                  );
+
+                  console.log(
+                    "Next restock will alert again."
+                  );
+                }
+
+
+                stockState[
+                  PRODUCT.sku
+                ] = false;
+              }
+
+
+            } catch (error) {
+
+              console.log(
+                "⚠️ Could not check Best Buy product."
+              );
+
+              console.log(
+                error.message
+              );
+
+              console.log(
+                "State was NOT changed."
+              );
+
+
+            } finally {
+
+              await browser.close();
+
+
+              saveState(
+                stockState
+              );
             }
 
 
-            await sleep(
-                RETRY_DELAY
+            console.log(
+              "========================================"
+            );
+
+            console.log(
+              "BEST BUY SCAN COMPLETE"
+            );
+
+            console.log(
+              "========================================"
             );
 
 
-            if (
-                cartSuccessDetected()
-            ) {
-                successfullyAdded =
-                    true;
+          })().catch(error => {
 
-                setStatus(
-                    `✅ ${PRODUCT.name} — ADDED TO CART`,
-                    "#166534"
-                );
+            console.error(error);
 
-                break;
-            }
-        }
+            process.exit(1);
+
+          });
+
+          EOF
+
+          node check-bestbuy.js
 
 
-        if (
-            !successfullyAdded &&
-            attempts >=
-                MAX_ADD_ATTEMPTS
-        ) {
-            setStatus(
-                `🟠 ${PRODUCT.name} — 5 ATTEMPTS MADE — NOT CONFIRMED IN CART`,
-                "#a14f00"
-            );
-        }
-
-
-        addInProgress =
-            false;
-    }
-
-
-    // ============================================================
-    // MAIN WATCH LOOP
-    // ============================================================
-
-    function checkPage() {
-        if (
-            successfullyAdded ||
-            addInProgress
-        ) {
-            return;
-        }
-
-
-        if (!isCorrectUrl()) {
-            setStatus(
-                "🔒 BEST BUY — WRONG PRODUCT PAGE",
-                "#7a1f1f"
-            );
-
-            return;
-        }
-
-
-        if (!verifyProduct()) {
-            setStatus(
-                "🔒 BEST BUY — PRODUCT VERIFICATION FAILED",
-                "#7a1f1f"
-            );
-
-            return;
-        }
-
-
-        if (
-            cartSuccessDetected()
-        ) {
-            successfullyAdded =
-                true;
-
-            setStatus(
-                `✅ ${PRODUCT.name} — ALREADY IN CART`,
-                "#166534"
-            );
-
-            return;
-        }
-
-
-        const unavailable =
-            getUnavailableState();
-
-        if (unavailable) {
-            setStatus(
-                `🟡 ${PRODUCT.name} — ${unavailable} — WATCHING`,
-                "#8a6d00"
-            );
-
-            return;
-        }
-
-
-        const result =
-            findSafeAddToCart();
-
-
-        if (
-            result.count > 1
-        ) {
-            setStatus(
-                `🔒 ${PRODUCT.name} — MULTIPLE VERIFIED ADD BUTTONS`,
-                "#7a1f1f"
-            );
-
-            return;
-        }
-
-
-        if (!result.button) {
-            setStatus(
-                `🟡 ${PRODUCT.name} — NO VERIFIED ADD TO CART — WATCHING`,
-                "#8a6d00"
-            );
-
-            return;
-        }
-
-
-        attemptAddToCart();
-    }
-
-
-    // ============================================================
-    // START
-    // ============================================================
-
-    createStatusBox();
-
-    setStatus(
-        "⚪ BEST BUY — CHECKING"
-    );
-
-    setInterval(
-        checkPage,
-        CHECK_INTERVAL
-    );
-
-    setTimeout(
-        checkPage,
-        700
-    );
-
-})();
+      - name: Save Best Buy stock state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .bestbuy-stock-state.json
+          key: bestbuy-stock-state-${{ github.run_id }}
