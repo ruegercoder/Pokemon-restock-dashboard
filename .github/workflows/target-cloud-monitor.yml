@@ -27,8 +27,9 @@ jobs:
             -d "Cloud monitoring and notifications are working. Tap to open the Target ETB page." \
             "https://ntfy.sh/joshpokemon6685563"
 
-          echo "✅ Test notification sent" in
-    check-target:
+          echo "✅ Test notification sent"
+
+  check-target:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_alert }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
