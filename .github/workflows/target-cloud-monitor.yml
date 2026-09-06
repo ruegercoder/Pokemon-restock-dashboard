@@ -385,38 +385,28 @@ jobs:
                   "✅ Product identity verified."
                 );
 
-
                 // ==========================================
-                // FIND VALID PURCHASE BUTTON
+                // FIND VERIFIED PRODUCT PURCHASE BUTTON
                 // ==========================================
 
-                const buttons =
+                const candidateButtons =
                   await page
                     .locator("button")
                     .all();
 
+                const matchingButtons = [];
 
-                let validAddButton =
-                  false;
-
-
-                for (const button of buttons) {
+                for (const button of candidateButtons) {
 
                   try {
 
-                    if (
-                      !(await button.isVisible())
-                    ) {
+                    if (!(await button.isVisible())) {
                       continue;
                     }
 
-
-                    if (
-                      !(await button.isEnabled())
-                    ) {
+                    if (!(await button.isEnabled())) {
                       continue;
                     }
-
 
                     const text =
                       (
@@ -427,36 +417,125 @@ jobs:
                         .trim()
                         .toLowerCase();
 
-
-                    if (
+                    const isPurchaseButton =
                       text === "add to cart" ||
-                      text.includes("ship it") ||
-                      text.includes("shipping")
-                    ) {
+                      text === "ship it" ||
+                      text.includes("add to cart");
 
-                      const box =
-                        await button.boundingBox();
-
-
-                      if (
-                        box &&
-                        box.y < 1800
-                      ) {
-
-                        validAddButton =
-                          true;
-
-
-                        console.log(
-                          `🟢 PURCHASE BUTTON FOUND: ${text}`
-                        );
-
-                        break;
-                      }
+                    if (!isPurchaseButton) {
+                      continue;
                     }
+
+                    // Walk upward from the button and inspect
+                    // its nearby product container.
+                    const result =
+                      await button.evaluate(
+                        (element, requiredWords) => {
+
+                          let node = element;
+
+                          for (let depth = 0; depth < 8; depth++) {
+
+                            if (!node) {
+                              break;
+                            }
+
+                            const nearbyText =
+                              (node.innerText || "")
+                                .toLowerCase();
+
+                            const matchesProduct =
+                              requiredWords.every(
+                                word =>
+                                  nearbyText.includes(
+                                    word.toLowerCase()
+                                  )
+                              );
+
+                            if (matchesProduct) {
+
+                              return {
+                                verified: true,
+                                nearbyText:
+                                  nearbyText.slice(0, 500)
+                              };
+                            }
+
+                            node =
+                              node.parentElement;
+                          }
+
+                          return {
+                            verified: false,
+                            nearbyText: ""
+                          };
+                        },
+                        product.words
+                      );
+
+                    if (!result.verified) {
+
+                      console.log(
+                        `🔒 Ignored unrelated purchase button: ${text}`
+                      );
+
+                      continue;
+                    }
+
+                    const box =
+                      await button.boundingBox();
+
+                    if (!box) {
+                      continue;
+                    }
+
+                    matchingButtons.push({
+                      text,
+                      y: box.y
+                    });
 
                   } catch (_) {}
                 }
+
+
+                let validAddButton =
+                  false;
+
+
+                if (matchingButtons.length === 1) {
+
+                  validAddButton =
+                    true;
+
+                  console.log(
+                    `🟢 VERIFIED PURCHASE BUTTON FOUND: ${matchingButtons[0].text}`
+                  );
+
+                  console.log(
+                    `Button position Y: ${matchingButtons[0].y}`
+                  );
+
+
+                } else if (
+                  matchingButtons.length > 1
+                ) {
+
+                  console.log(
+                    `🔒 Multiple verified purchase buttons found (${matchingButtons.length}).`
+                  );
+
+                  console.log(
+                    "Treating page as unavailable for safety."
+                  );
+
+
+                } else {
+
+                  console.log(
+                    "🟡 No verified product purchase button found."
+                  );
+                }
+                
 
 
                 // ==========================================
