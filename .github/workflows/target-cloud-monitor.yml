@@ -9,6 +9,12 @@ on:
         default: false
         type: boolean
 
+      simulate_restock:
+        description: "SIMULATE ETB restock for dedupe test"
+        required: false
+        default: false
+        type: boolean
+
   schedule:
     - cron: "*/5 * * * *"
 
@@ -36,8 +42,81 @@ jobs:
           echo "✅ Test notification sent"
 
 
+  simulate-restock:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate_restock }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Restore previous Target stock state
+        uses: actions/cache/restore@v4
+        with:
+          path: .target-stock-state.json
+          key: target-stock-state-${{ github.run_id }}
+          restore-keys: |
+            target-stock-state-
+
+      - name: Test restock deduplication
+        run: |
+          node <<'EOF'
+          const fs = require("fs");
+
+          const file = ".target-stock-state.json";
+          const testKey = "__dedupe_test_etb";
+
+          let state = {};
+
+          if (fs.existsSync(file)) {
+            state = JSON.parse(fs.readFileSync(file, "utf8"));
+          }
+
+          if (state[testKey] === true) {
+            console.log("🔕 TEST: Already alerted for simulated ETB restock — no duplicate notification.");
+            console.log("✅ DEDUPE TEST PASSED.");
+
+            // Reset test flag so the temporary test is clean afterward.
+            state[testKey] = false;
+
+          } else {
+            console.log("🔔 TEST: New simulated ETB restock — sending notification.");
+
+            fetch("https://ntfy.sh/joshpokemon6685563", {
+              method: "POST",
+              headers: {
+                "Title": "🧪 SIMULATED TARGET RESTOCK",
+                "Priority": "high",
+                "Tags": "test_tube,pokemon",
+                "Click": "https://www.target.com/p/-/A-1010892076"
+              },
+              body: "Simulated ETB restock dedupe test. This is NOT a real restock."
+            }).then(async response => {
+              console.log(`Test notification response: ${response.status}`);
+
+              state[testKey] = true;
+
+              fs.writeFileSync(
+                file,
+                JSON.stringify(state, null, 2)
+              );
+
+              console.log("✅ TEST state saved as alerted.");
+            });
+          }
+
+          if (state[testKey] === false) {
+            fs.writeFileSync(
+              file,
+              JSON.stringify(state, null, 2)
+            );
+          }
+          EOF
+
+      - name: Save simulated test state
+        uses: actions/cache/save@v4
+        with:
+          path: .target-stock-state.json
+          key: target-stock-state-${{ github.run_id }}
   check-target:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_alert }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.test_alert && !inputs.simulate_restock) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
