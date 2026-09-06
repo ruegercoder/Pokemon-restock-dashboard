@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Best Buy Pokemon Auto Add - LIVE
 // @namespace    pokemon-restock-dashboard
-// @version      1.2.0
-// @description  Best Buy Pokemon exact-product auto add with hardened purchase-control targeting
+// @version      1.2.1
+// @description  Best Buy Pokemon exact-product auto add with startup grace period
 // @match        https://www.bestbuy.com/product/*
 // @grant        none
 // @run-at       document-idle
@@ -26,6 +26,12 @@
 
     const CHECK_INTERVAL = 1200;
     const CLICK_COOLDOWN = 2500;
+
+    // Give Best Buy time to render the title/SKU before declaring
+    // that we're on the wrong product.
+    const STARTUP_GRACE_PERIOD = 7000;
+
+    const SCRIPT_START_TIME = Date.now();
 
     let lastStatus = "";
     let lastClickTime = 0;
@@ -115,6 +121,13 @@
         );
     }
 
+    function stillInStartupGracePeriod() {
+        return (
+            Date.now() - SCRIPT_START_TIME <
+            STARTUP_GRACE_PERIOD
+        );
+    }
+
     // ============================================================
     // FIND FULFILLMENT AREA
     // ============================================================
@@ -125,10 +138,16 @@
         ];
 
         return elements.filter(el => {
-            const text = clean(el.innerText || el.textContent || "");
+            const text = clean(
+                el.innerText ||
+                el.textContent ||
+                ""
+            );
 
             // Ignore giant page-level containers.
-            if (text.length > 140) return false;
+            if (text.length > 140) {
+                return false;
+            }
 
             return (
                 text.includes("pickup") ||
@@ -149,7 +168,9 @@
         ];
 
         const candidates = controls.filter(el => {
-            if (!el.isConnected) return false;
+            if (!el.isConnected) {
+                return false;
+            }
 
             const text = clean(
                 el.innerText ||
@@ -166,8 +187,11 @@
 
             const rect = el.getBoundingClientRect();
 
-            // Must actually look like the large Best Buy purchase button.
-            if (rect.width < window.innerWidth * 0.65) {
+            // Must look like the large Best Buy purchase button.
+            if (
+                rect.width <
+                window.innerWidth * 0.65
+            ) {
                 return false;
             }
 
@@ -182,19 +206,12 @@
             return null;
         }
 
-        // --------------------------------------------------------
-        // If only one large exact purchase control exists,
-        // that is almost certainly our verified control.
-        // --------------------------------------------------------
-
         if (candidates.length === 1) {
             return candidates[0];
         }
 
-        // --------------------------------------------------------
-        // If multiple exist, choose the one physically closest
-        // to Pickup / Shipping information.
-        // --------------------------------------------------------
+        // If several matching controls exist, choose the one
+        // closest to Pickup / Shipping fulfillment information.
 
         const anchors = findFulfillmentAnchors();
 
@@ -220,7 +237,10 @@
                     anchorRect.height / 2;
 
                 const distance =
-                    Math.abs(buttonCenterY - anchorCenterY);
+                    Math.abs(
+                        buttonCenterY -
+                        anchorCenterY
+                    );
 
                 if (distance < bestDistance) {
                     bestDistance = distance;
@@ -229,8 +249,6 @@
             }
         }
 
-        // The real purchase button should be reasonably close
-        // to the fulfillment section.
         if (
             bestCandidate &&
             bestDistance < 700
@@ -268,7 +286,6 @@
             return;
         }
 
-        // Re-check exact text immediately before click.
         const text = clean(
             control.innerText ||
             control.textContent ||
@@ -316,13 +333,24 @@
     // ============================================================
 
     function checkProduct() {
-        if (stopped) return;
+        if (stopped) {
+            return;
+        }
 
         // --------------------------------------------------------
-        // WRONG PRODUCT = NEVER CLICK
+        // PRODUCT CHECK
         // --------------------------------------------------------
 
         if (!correctProduct()) {
+            if (stillInStartupGracePeriod()) {
+                setStatus(
+                    "🔵 LOADING PRODUCT…",
+                    "#325f91"
+                );
+
+                return;
+            }
+
             setStatus(
                 "🔴 SAFETY LOCK — WRONG PRODUCT",
                 "#9b1c1c"
@@ -401,13 +429,13 @@
     // ============================================================
 
     setStatus(
-        "🟡 BEST BUY WATCHER STARTING",
-        "#8a6d00"
+        "🔵 LOADING PRODUCT…",
+        "#325f91"
     );
 
     setTimeout(
         checkProduct,
-        800
+        500
     );
 
     setInterval(
