@@ -24,6 +24,10 @@ concurrency:
 
 jobs:
 
+  # ============================================================
+  # SIMPLE NOTIFICATION TEST
+  # ============================================================
+
   test-alert:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
     runs-on: ubuntu-latest
@@ -42,18 +46,24 @@ jobs:
           echo "✅ Test notification sent"
 
 
+  # ============================================================
+  # SIMULATED RESTOCK DEDUPE TEST
+  # Uses its OWN cache so it cannot interfere with live state.
+  # ============================================================
+
   simulate-restock:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.simulate_restock }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Restore previous Target stock state
+
+      - name: Restore simulated dedupe state
         uses: actions/cache/restore@v4
         with:
           path: .target-stock-state.json
-          key: target-stock-state-${{ github.run_id }}
+          key: target-dedupe-state-${{ github.run_id }}
           restore-keys: |
-            target-stock-state-
+            target-dedupe-state-
 
       - name: Test restock deduplication
         run: |
@@ -66,55 +76,101 @@ jobs:
           let state = {};
 
           if (fs.existsSync(file)) {
-            state = JSON.parse(fs.readFileSync(file, "utf8"));
+            try {
+              state = JSON.parse(
+                fs.readFileSync(file, "utf8")
+              );
+            } catch (_) {
+              state = {};
+            }
           }
 
-          if (state[testKey] === true) {
-            console.log("🔕 TEST: Already alerted for simulated ETB restock — no duplicate notification.");
-            console.log("✅ DEDUPE TEST PASSED.");
+          async function runTest() {
 
-            // Reset test flag so the temporary test is clean afterward.
-            state[testKey] = false;
+            if (state[testKey] === true) {
 
-          } else {
-            console.log("🔔 TEST: New simulated ETB restock — sending notification.");
+              console.log(
+                "🔕 TEST: Already alerted for simulated ETB restock — no duplicate notification."
+              );
 
-            fetch("https://ntfy.sh/joshpokemon6685563", {
-              method: "POST",
-              headers: {
-                "Title": "SIMULATED TARGET RESTOCK",
-                "Priority": "high",
-                "Tags": "test_tube,pokemon",
-                "Click": "https://www.target.com/p/-/A-1010892076"
-              },
-              body: "Simulated ETB restock dedupe test. This is NOT a real restock."
-            }).then(async response => {
-              console.log(`Test notification response: ${response.status}`);
+              console.log(
+                "✅ DEDUPE TEST PASSED."
+              );
 
-              state[testKey] = true;
+              // Reset only the temporary test flag so a future
+              // two-run test can start clean again.
+              state[testKey] = false;
 
               fs.writeFileSync(
                 file,
                 JSON.stringify(state, null, 2)
               );
 
-              console.log("✅ TEST state saved as alerted.");
-            });
-          }
+              return;
+            }
 
-          if (state[testKey] === false) {
+
+            console.log(
+              "🔔 TEST: New simulated ETB restock — sending notification."
+            );
+
+            const response = await fetch(
+              "https://ntfy.sh/joshpokemon6685563",
+              {
+                method: "POST",
+
+                headers: {
+                  "Title": "SIMULATED TARGET RESTOCK",
+                  "Priority": "high",
+                  "Tags": "test_tube,pokemon",
+                  "Click": "https://www.target.com/p/-/A-1010892076"
+                },
+
+                body:
+                  "Simulated ETB restock dedupe test. This is NOT a real restock."
+              }
+            );
+
+            console.log(
+              `Test notification response: ${response.status}`
+            );
+
+            if (!response.ok) {
+              throw new Error(
+                `Test notification failed with HTTP ${response.status}`
+              );
+            }
+
+            state[testKey] = true;
+
             fs.writeFileSync(
               file,
               JSON.stringify(state, null, 2)
             );
+
+            console.log(
+              "✅ TEST state saved as alerted."
+            );
           }
+
+          runTest().catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
           EOF
 
-      - name: Save simulated test state
+      - name: Save simulated dedupe state
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: .target-stock-state.json
-          key: target-stock-state-${{ github.run_id }}
+          key: target-dedupe-state-${{ github.run_id }}
+
+
+  # ============================================================
+  # LIVE TARGET MONITOR
+  # ============================================================
+
   check-target:
     if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.test_alert && !inputs.simulate_restock) }}
     runs-on: ubuntu-latest
@@ -203,7 +259,9 @@ jobs:
             try {
 
               if (!fs.existsSync(STATE_FILE)) {
-                console.log("No previous stock state found.");
+                console.log(
+                  "No previous stock state found."
+                );
                 return {};
               }
 
@@ -257,7 +315,7 @@ jobs:
                 method: "POST",
 
                 headers: {
-                  "Title":  "TARGET POKEMON RESTOCK",
+                  "Title": "TARGET POKEMON RESTOCK",
                   "Priority": "urgent",
                   "Tags": "rotating_light,pokemon",
                   "Click": url
@@ -273,6 +331,12 @@ jobs:
             console.log(
               `Notification sent for ${product.name}: ${response.status}`
             );
+
+            if (!response.ok) {
+              throw new Error(
+                `Notification failed with HTTP ${response.status}`
+              );
+            }
           }
 
 
@@ -464,6 +528,7 @@ jobs:
                   "✅ Product identity verified."
                 );
 
+
                 // ==========================================
                 // FIND VERIFIED PRODUCT PURCHASE BUTTON
                 // ==========================================
@@ -475,17 +540,25 @@ jobs:
 
                 const matchingButtons = [];
 
-                for (const button of candidateButtons) {
+
+                for (
+                  const button of candidateButtons
+                ) {
 
                   try {
 
-                    if (!(await button.isVisible())) {
+                    if (
+                      !(await button.isVisible())
+                    ) {
                       continue;
                     }
 
-                    if (!(await button.isEnabled())) {
+                    if (
+                      !(await button.isEnabled())
+                    ) {
                       continue;
                     }
+
 
                     const text =
                       (
@@ -496,32 +569,49 @@ jobs:
                         .trim()
                         .toLowerCase();
 
+
                     const isPurchaseButton =
                       text === "add to cart" ||
                       text === "ship it" ||
-                      text.includes("add to cart");
+                      text.includes(
+                        "add to cart"
+                      );
+
 
                     if (!isPurchaseButton) {
                       continue;
                     }
 
-                    // Walk upward from the button and inspect
-                    // its nearby product container.
+
                     const result =
                       await button.evaluate(
-                        (element, requiredWords) => {
+                        (
+                          element,
+                          requiredWords
+                        ) => {
 
-                          let node = element;
+                          let node =
+                            element;
 
-                          for (let depth = 0; depth < 8; depth++) {
+
+                          for (
+                            let depth = 0;
+                            depth < 8;
+                            depth++
+                          ) {
 
                             if (!node) {
                               break;
                             }
 
+
                             const nearbyText =
-                              (node.innerText || "")
+                              (
+                                node.innerText ||
+                                ""
+                              )
                                 .toLowerCase();
+
 
                             const matchesProduct =
                               requiredWords.every(
@@ -531,18 +621,26 @@ jobs:
                                   )
                               );
 
-                            if (matchesProduct) {
+
+                            if (
+                              matchesProduct
+                            ) {
 
                               return {
                                 verified: true,
                                 nearbyText:
-                                  nearbyText.slice(0, 500)
+                                  nearbyText.slice(
+                                    0,
+                                    500
+                                  )
                               };
                             }
+
 
                             node =
                               node.parentElement;
                           }
+
 
                           return {
                             verified: false,
@@ -551,6 +649,7 @@ jobs:
                         },
                         product.words
                       );
+
 
                     if (!result.verified) {
 
@@ -561,17 +660,21 @@ jobs:
                       continue;
                     }
 
+
                     const box =
                       await button.boundingBox();
+
 
                     if (!box) {
                       continue;
                     }
 
+
                     matchingButtons.push({
                       text,
                       y: box.y
                     });
+
 
                   } catch (_) {}
                 }
@@ -581,14 +684,18 @@ jobs:
                   false;
 
 
-                if (matchingButtons.length === 1) {
+                if (
+                  matchingButtons.length === 1
+                ) {
 
                   validAddButton =
                     true;
 
+
                   console.log(
                     `🟢 VERIFIED PURCHASE BUTTON FOUND: ${matchingButtons[0].text}`
                   );
+
 
                   console.log(
                     `Button position Y: ${matchingButtons[0].y}`
@@ -614,7 +721,6 @@ jobs:
                     "🟡 No verified product purchase button found."
                   );
                 }
-                
 
 
                 // ==========================================
@@ -622,7 +728,9 @@ jobs:
                 // ==========================================
 
                 const wasAvailable =
-                  stockState[product.id] === true;
+                  stockState[
+                    product.id
+                  ] === true;
 
 
                 if (validAddButton) {
@@ -653,8 +761,9 @@ jobs:
                   }
 
 
-                  stockState[product.id] =
-                    true;
+                  stockState[
+                    product.id
+                  ] = true;
 
 
                 } else {
@@ -676,8 +785,9 @@ jobs:
                   }
 
 
-                  stockState[product.id] =
-                    false;
+                  stockState[
+                    product.id
+                  ] = false;
                 }
 
 
