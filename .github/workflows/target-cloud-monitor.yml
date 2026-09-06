@@ -8,10 +8,16 @@ on:
         required: false
         default: false
         type: boolean
+
   schedule:
     - cron: "*/5 * * * *"
 
+concurrency:
+  group: target-pokemon-cloud-monitor
+  cancel-in-progress: false
+
 jobs:
+
   test-alert:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_alert }}
     runs-on: ubuntu-latest
@@ -29,19 +35,32 @@ jobs:
 
           echo "✅ Test notification sent"
 
+
   check-target:
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.test_alert }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
+
+      - name: Restore previous Target stock state
+        uses: actions/cache/restore@v4
+        with:
+          path: .target-stock-state.json
+          key: target-stock-state-${{ github.run_id }}
+          restore-keys: |
+            target-stock-state-
+
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
 
       - name: Install Playwright
         run: |
@@ -49,10 +68,15 @@ jobs:
           npm install playwright
           npx playwright install --with-deps chromium
 
+
       - name: Check Target Pokémon products
         run: |
           cat > check-target.js <<'EOF'
+
           const { chromium } = require("playwright");
+          const fs = require("fs");
+
+          const STATE_FILE = ".target-stock-state.json";
 
           const PRODUCTS = [
             {
@@ -94,17 +118,72 @@ jobs:
 
           const NTFY_TOPIC = "joshpokemon6685563";
 
+
+          function loadState() {
+
+            try {
+
+              if (!fs.existsSync(STATE_FILE)) {
+                console.log("No previous stock state found.");
+                return {};
+              }
+
+              const state =
+                JSON.parse(
+                  fs.readFileSync(
+                    STATE_FILE,
+                    "utf8"
+                  )
+                );
+
+              console.log(
+                "✅ Previous stock state loaded."
+              );
+
+              return state;
+
+            } catch (error) {
+
+              console.log(
+                "⚠️ Could not read previous state."
+              );
+
+              return {};
+            }
+          }
+
+
+          function saveState(state) {
+
+            fs.writeFileSync(
+              STATE_FILE,
+              JSON.stringify(
+                state,
+                null,
+                2
+              )
+            );
+
+            console.log(
+              "✅ Stock state saved."
+            );
+          }
+
+
           async function sendNotification(product, url) {
+
             const response = await fetch(
               `https://ntfy.sh/${NTFY_TOPIC}`,
               {
                 method: "POST",
+
                 headers: {
-                  "Title": `🚨 TARGET POKÉMON RESTOCK`,
+                  "Title": "🚨 TARGET POKÉMON RESTOCK",
                   "Priority": "urgent",
                   "Tags": "rotating_light,pokemon",
                   "Click": url
                 },
+
                 body:
                   `${product.name} may be IN STOCK at Target!\n\n` +
                   `${product.id}\n\n` +
@@ -117,60 +196,105 @@ jobs:
             );
           }
 
+
           (async () => {
 
-            console.log("========================================");
-            console.log("TARGET POKÉMON CLOUD MONITOR");
-            console.log("========================================");
+            console.log(
+              "========================================"
+            );
 
-            const browser = await chromium.launch({
-              headless: true
-            });
+            console.log(
+              "TARGET POKÉMON CLOUD MONITOR"
+            );
 
-            const context = await browser.newContext({
-              userAgent:
-                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) " +
-                "AppleWebKit/605.1.15 (KHTML, like Gecko) " +
-                "Version/18.0 Mobile/15E148 Safari/604.1",
+            console.log(
+              "========================================"
+            );
 
-              viewport: {
-                width: 390,
-                height: 844
-              },
 
-              locale: "en-US"
-            });
+            const stockState =
+              loadState();
+
+
+            const browser =
+              await chromium.launch({
+                headless: true
+              });
+
+
+            const context =
+              await browser.newContext({
+
+                userAgent:
+                  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) " +
+                  "AppleWebKit/605.1.15 (KHTML, like Gecko) " +
+                  "Version/18.0 Mobile/15E148 Safari/604.1",
+
+                viewport: {
+                  width: 390,
+                  height: 844
+                },
+
+                locale: "en-US"
+              });
+
 
             for (const product of PRODUCTS) {
 
-              const page = await context.newPage();
+              const page =
+                await context.newPage();
+
 
               const url =
                 `https://www.target.com/p/-/${product.id}`;
 
+
               console.log("");
-              console.log("----------------------------------------");
-              console.log(`Checking: ${product.name}`);
-              console.log(`ID: ${product.id}`);
+
+              console.log(
+                "----------------------------------------"
+              );
+
+              console.log(
+                `Checking: ${product.name}`
+              );
+
+              console.log(
+                `ID: ${product.id}`
+              );
+
               console.log(url);
+
 
               try {
 
-                const response = await page.goto(url, {
-                  waitUntil: "domcontentloaded",
-                  timeout: 60000
-                });
+                const response =
+                  await page.goto(
+                    url,
+                    {
+                      waitUntil: "domcontentloaded",
+                      timeout: 60000
+                    }
+                  );
+
 
                 console.log(
                   `HTTP status: ${
-                    response ? response.status() : "unknown"
+                    response
+                      ? response.status()
+                      : "unknown"
                   }`
                 );
 
+
                 await page.waitForTimeout(7000);
 
+
                 const title =
-                  await page.title().catch(() => "");
+                  await page
+                    .title()
+                    .catch(() => "");
+
 
                 const bodyText =
                   await page
@@ -178,17 +302,23 @@ jobs:
                     .innerText()
                     .catch(() => "");
 
+
                 const lower =
                   bodyText.toLowerCase();
 
-                console.log(`Title: ${title}`);
+
+                console.log(
+                  `Title: ${title}`
+                );
+
                 console.log(
                   `Page text length: ${bodyText.length}`
                 );
 
-                // ------------------------------------------
-                // BOT / ERROR PAGE CHECK
-                // ------------------------------------------
+
+                // ==========================================
+                // BLOCK / ERROR PAGE SAFETY CHECK
+                // ==========================================
 
                 const blockedWords = [
                   "access denied",
@@ -198,72 +328,105 @@ jobs:
                   "something went wrong"
                 ];
 
+
                 const blocked =
-                  blockedWords.some(word =>
-                    lower.includes(word)
+                  blockedWords.some(
+                    word =>
+                      lower.includes(word)
                   );
 
+
                 if (blocked) {
+
                   console.log(
                     "⚠️ Target returned a blocked/error page."
                   );
 
+                  console.log(
+                    "State was NOT changed."
+                  );
+
                   await page.close();
+
                   continue;
                 }
 
-                // ------------------------------------------
-                // VERIFY THIS IS THE CORRECT PRODUCT
-                // ------------------------------------------
+
+                // ==========================================
+                // VERIFY CORRECT PRODUCT
+                // ==========================================
 
                 const productVerified =
-                  product.words.every(word =>
-                    lower.includes(
-                      word.toLowerCase()
-                    )
+                  product.words.every(
+                    word =>
+                      lower.includes(
+                        word.toLowerCase()
+                      )
                   );
 
+
                 if (!productVerified) {
+
                   console.log(
                     "🔒 Product verification failed."
                   );
 
+                  console.log(
+                    "State was NOT changed."
+                  );
+
                   await page.close();
+
                   continue;
                 }
+
 
                 console.log(
                   "✅ Product identity verified."
                 );
 
-                // ------------------------------------------
-                // CHECK PRODUCT PURCHASE BUTTONS
-                // ------------------------------------------
+
+                // ==========================================
+                // FIND VALID PURCHASE BUTTON
+                // ==========================================
 
                 const buttons =
-                  await page.locator("button").all();
+                  await page
+                    .locator("button")
+                    .all();
 
-                let validAddButton = false;
+
+                let validAddButton =
+                  false;
+
 
                 for (const button of buttons) {
 
                   try {
 
-                    if (!(await button.isVisible())) {
+                    if (
+                      !(await button.isVisible())
+                    ) {
                       continue;
                     }
 
-                    if (!(await button.isEnabled())) {
+
+                    if (
+                      !(await button.isEnabled())
+                    ) {
                       continue;
                     }
+
 
                     const text =
                       (
-                        await button.innerText()
+                        await button
+                          .innerText()
                           .catch(() => "")
                       )
                         .trim()
                         .toLowerCase();
+
 
                     if (
                       text === "add to cart" ||
@@ -274,13 +437,15 @@ jobs:
                       const box =
                         await button.boundingBox();
 
-                      // Only trust purchase controls
-                      // reasonably near the main product area.
+
                       if (
                         box &&
                         box.y < 1800
                       ) {
-                        validAddButton = true;
+
+                        validAddButton =
+                          true;
+
 
                         console.log(
                           `🟢 PURCHASE BUTTON FOUND: ${text}`
@@ -293,20 +458,46 @@ jobs:
                   } catch (_) {}
                 }
 
-                // ------------------------------------------
-                // RESULT
-                // ------------------------------------------
+
+                // ==========================================
+                // STOCK STATE + DEDUPLICATION
+                // ==========================================
+
+                const wasAvailable =
+                  stockState[product.id] === true;
+
 
                 if (validAddButton) {
 
                   console.log(
-                    `🚨 POSSIBLE RESTOCK: ${product.name}`
+                    `🚨 AVAILABLE: ${product.name}`
                   );
 
-                  await sendNotification(
-                    product,
-                    page.url()
-                  );
+
+                  if (!wasAvailable) {
+
+                    console.log(
+                      "🔔 NEW restock detected — sending notification."
+                    );
+
+
+                    await sendNotification(
+                      product,
+                      page.url()
+                    );
+
+
+                  } else {
+
+                    console.log(
+                      "🔕 Already alerted for this restock — no duplicate notification."
+                    );
+                  }
+
+
+                  stockState[product.id] =
+                    true;
+
 
                 } else {
 
@@ -314,7 +505,23 @@ jobs:
                     `🟡 SOLD OUT / NO PURCHASE BUTTON: ${product.name}`
                   );
 
+
+                  if (wasAvailable) {
+
+                    console.log(
+                      "♻️ Product returned to sold out."
+                    );
+
+                    console.log(
+                      "Next restock will alert again."
+                    );
+                  }
+
+
+                  stockState[product.id] =
+                    false;
                 }
+
 
               } catch (error) {
 
@@ -322,29 +529,67 @@ jobs:
                   `⚠️ Could not check ${product.name}`
                 );
 
-                console.log(error.message);
+                console.log(
+                  error.message
+                );
 
+                console.log(
+                  "State was NOT changed."
+                );
               }
+
 
               await page.close();
 
-              await new Promise(resolve =>
-                setTimeout(resolve, 2000)
+
+              await new Promise(
+                resolve =>
+                  setTimeout(
+                    resolve,
+                    2000
+                  )
               );
             }
 
+
             await browser.close();
 
+
+            saveState(
+              stockState
+            );
+
+
             console.log("");
-            console.log("========================================");
-            console.log("TARGET SCAN COMPLETE");
-            console.log("========================================");
+
+            console.log(
+              "========================================"
+            );
+
+            console.log(
+              "TARGET SCAN COMPLETE"
+            );
+
+            console.log(
+              "========================================"
+            );
+
 
           })().catch(error => {
+
             console.error(error);
+
             process.exit(1);
           });
 
           EOF
 
           node check-target.js
+
+
+      - name: Save Target stock state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .target-stock-state.json
+          key: target-stock-state-${{ github.run_id }}
