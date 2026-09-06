@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Best Buy Pokemon Auto Add - SAFE CLICK TEST
+// @name         Best Buy Pokemon Auto Add - HARDENED LIVE
 // @namespace    pokemon-restock-dashboard
-// @version      1.0.1-test
-// @description  Safe fake Add to Cart test for Best Buy Pokemon watcher
+// @version      1.1.0
+// @description  Hardened Best Buy Pokemon watcher - exact product and purchase-area targeting
 // @match        https://www.bestbuy.com/product/*
 // @grant        none
 // @run-at       document-idle
@@ -11,10 +11,47 @@
 (function () {
     "use strict";
 
-    const CHECK_INTERVAL = 1000;
-    let clicked = false;
+    // ============================================================
+    // PRODUCT SAFETY LOCK
+    // ============================================================
 
-    function makeStatus() {
+    const TARGET_SKU = "6685563";
+
+    const REQUIRED_WORDS = [
+        "pokemon",
+        "30th",
+        "celebration",
+        "ultra-premium collection"
+    ];
+
+    const CHECK_INTERVAL = 1500;
+    const CLICK_COOLDOWN = 2500;
+
+    let lastClickTime = 0;
+    let clickCount = 0;
+    let finished = false;
+    let lastStatus = "";
+
+    // ============================================================
+    // HELPERS
+    // ============================================================
+
+    function normalize(text) {
+        return (text || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+    }
+
+    function pageText() {
+        return normalize(document.body?.innerText || "");
+    }
+
+    // ============================================================
+    // STATUS BANNER
+    // ============================================================
+
+    function getStatusBox() {
         let box = document.getElementById("bestbuy-pokemon-status");
 
         if (!box) {
@@ -27,15 +64,16 @@
                 left: 50%;
                 transform: translateX(-50%);
                 z-index: 9999999;
-                background: #8a6d00;
-                color: white;
+                background: #222;
+                color: #fff;
                 padding: 12px 18px;
                 border-radius: 16px;
                 font-size: 16px;
-                font-weight: 700;
+                font-weight: 800;
                 text-align: center;
-                max-width: 85vw;
+                max-width: 86vw;
                 box-shadow: 0 4px 14px rgba(0,0,0,.28);
+                pointer-events: none;
             `;
 
             document.body.appendChild(box);
@@ -44,74 +82,295 @@
         return box;
     }
 
-    function setStatus(text, color) {
-        const box = makeStatus();
+    function setStatus(text, color = "#222") {
+        if (lastStatus === text) return;
+
+        lastStatus = text;
+
+        const box = getStatusBox();
         box.textContent = text;
         box.style.background = color;
+
+        console.log("[BEST BUY POKEMON]", text);
     }
 
-    function createFakeButton() {
-        if (document.getElementById("pokemon-fake-add")) return;
+    // ============================================================
+    // VERIFY EXACT PRODUCT
+    // ============================================================
 
-        const fake = document.createElement("button");
-        fake.id = "pokemon-fake-add";
-        fake.textContent = "Add to Cart — SAFE TEST";
+    function correctProductPage() {
+        const text = pageText();
+        const url = location.href.toLowerCase();
 
-        fake.style.cssText = `
-            position: fixed;
-            bottom: 25px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 9999999;
-            width: calc(100% - 40px);
-            max-width: 500px;
-            padding: 18px;
-            font-size: 18px;
-            font-weight: 800;
-            background: #ffe000;
-            color: #111;
-            border: 3px solid #111;
-            border-radius: 12px;
-        `;
+        const skuFound =
+            text.includes(TARGET_SKU) ||
+            url.includes(TARGET_SKU);
 
-        fake.addEventListener("click", () => {
-            clicked = true;
-            fake.textContent = "✅ SAFE TEST CLICKED";
-            fake.style.background = "#2e7d32";
-            fake.style.color = "white";
+        if (!skuFound) {
+            return false;
+        }
 
-            setStatus(
-                "✅ SAFE AUTO-CLICK TEST PASSED",
-                "#2e7d32"
+        return REQUIRED_WORDS.every(word =>
+            text.includes(word.toLowerCase())
+        );
+    }
+
+    // ============================================================
+    // DETECT WHETHER THIS BUTTON BELONGS TO MAIN PURCHASE AREA
+    // ============================================================
+
+    function isPurchaseAreaControl(element) {
+        let node = element;
+
+        /*
+         * Walk upward through the element's containers.
+         * The real Best Buy purchase area we tested contains
+         * fulfillment language such as Pickup / Shipping.
+         */
+
+        for (let i = 0; i < 8 && node; i++) {
+            const text = normalize(node.innerText || "");
+
+            const hasFulfillment =
+                (
+                    text.includes("pickup") &&
+                    text.includes("shipping")
+                );
+
+            const hasRelevantStatus =
+                text.includes("coming soon") ||
+                text.includes("add to cart");
+
+            if (hasFulfillment && hasRelevantStatus) {
+                return true;
+            }
+
+            node = node.parentElement;
+        }
+
+        return false;
+    }
+
+    // ============================================================
+    // FIND ONLY THE VERIFIED PURCHASE CONTROL
+    // ============================================================
+
+    function findPurchaseControl() {
+        const candidates = [
+            ...document.querySelectorAll(
+                "button, [role='button']"
+            )
+        ];
+
+        for (const el of candidates) {
+            if (!el.isConnected) continue;
+
+            const text = normalize(
+                el.innerText ||
+                el.textContent ||
+                el.getAttribute("aria-label")
             );
+
+            if (
+                text !== "coming soon" &&
+                text !== "add to cart"
+            ) {
+                continue;
+            }
+
+            const rect = el.getBoundingClientRect();
+
+            // Reject tiny/icon controls.
+            if (
+                rect.width < 180 ||
+                rect.height < 35
+            ) {
+                continue;
+            }
+
+            // HARD LOCK:
+            // Button must live inside the fulfillment/purchase area.
+            if (!isPurchaseAreaControl(el)) {
+                continue;
+            }
+
+            return el;
+        }
+
+        return null;
+    }
+
+    // ============================================================
+    // CART CONFIRMATION
+    // ============================================================
+
+    function itemAppearsInCart() {
+        const text = pageText();
+
+        const confirmationPhrases = [
+            "added to cart",
+            "added to your cart",
+            "view cart",
+            "go to cart"
+        ];
+
+        return confirmationPhrases.some(phrase =>
+            text.includes(phrase)
+        );
+    }
+
+    // ============================================================
+    // CLICK SAFETY
+    // ============================================================
+
+    function canClickNow() {
+        return (
+            Date.now() - lastClickTime >= CLICK_COOLDOWN
+        );
+    }
+
+    function clickPurchaseControl(control) {
+        if (!canClickNow()) return;
+
+        // Re-check immediately before clicking.
+        const text = normalize(
+            control.innerText ||
+            control.textContent ||
+            control.getAttribute("aria-label")
+        );
+
+        if (text !== "add to cart") {
+            return;
+        }
+
+        if (!isPurchaseAreaControl(control)) {
+            setStatus(
+                "🔴 SAFETY LOCK — CONTROL MOVED",
+                "#9d1c1c"
+            );
+
+            return;
+        }
+
+        lastClickTime = Date.now();
+        clickCount++;
+
+        setStatus(
+            `🟢 ADD TO CART — CLICKING ${clickCount}`,
+            "#26732b"
+        );
+
+        control.scrollIntoView({
+            block: "center",
+            behavior: "instant"
         });
 
-        document.body.appendChild(fake);
+        control.click();
     }
 
-    function checkTestButton() {
-        const fake = document.getElementById("pokemon-fake-add");
+    // ============================================================
+    // MAIN WATCHER
+    // ============================================================
 
-        if (!fake || clicked) return;
+    function checkProduct() {
+        if (finished) return;
 
-        const text = fake.textContent.trim().toLowerCase();
+        // --------------------------------------------------------
+        // SAFETY LOCK #1
+        // Exact product
+        // --------------------------------------------------------
 
-        if (text === "add to cart — safe test") {
+        if (!correctProductPage()) {
             setStatus(
-                "🟢 FAKE ADD TO CART FOUND — AUTO CLICKING",
-                "#2e7d32"
+                "🔴 SAFETY LOCK — WRONG PRODUCT",
+                "#9d1c1c"
             );
 
-            fake.click();
+            return;
         }
+
+        // --------------------------------------------------------
+        // Already successfully added
+        // --------------------------------------------------------
+
+        if (itemAppearsInCart()) {
+            finished = true;
+
+            setStatus(
+                "✅ ITEM APPEARS IN CART — STOPPED",
+                "#26732b"
+            );
+
+            return;
+        }
+
+        // --------------------------------------------------------
+        // Find exact verified purchase control
+        // --------------------------------------------------------
+
+        const control = findPurchaseControl();
+
+        if (!control) {
+            setStatus(
+                "🟡 WATCHING — CONTROL NOT FOUND",
+                "#8a6d00"
+            );
+
+            return;
+        }
+
+        const text = normalize(
+            control.innerText ||
+            control.textContent ||
+            control.getAttribute("aria-label")
+        );
+
+        // --------------------------------------------------------
+        // Coming Soon
+        // --------------------------------------------------------
+
+        if (text === "coming soon") {
+            setStatus(
+                "🟡 COMING SOON — WATCHING",
+                "#8a6d00"
+            );
+
+            return;
+        }
+
+        // --------------------------------------------------------
+        // Add to Cart
+        // --------------------------------------------------------
+
+        if (text === "add to cart") {
+            clickPurchaseControl(control);
+            return;
+        }
+
+        // --------------------------------------------------------
+        // Anything unexpected
+        // --------------------------------------------------------
+
+        setStatus(
+            "🟡 WATCHING",
+            "#8a6d00"
+        );
     }
 
+    // ============================================================
+    // START
+    // ============================================================
+
     setStatus(
-        "🧪 SAFE CLICK TEST STARTING",
-        "#555"
+        "🟡 BEST BUY WATCHER STARTING",
+        "#8a6d00"
     );
 
-    createFakeButton();
+    setTimeout(checkProduct, 1000);
 
-    setInterval(checkTestButton, CHECK_INTERVAL);
+    setInterval(
+        checkProduct,
+        CHECK_INTERVAL
+    );
+
 })();
