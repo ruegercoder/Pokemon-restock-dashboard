@@ -82,7 +82,7 @@ jobs:
             fetch("https://ntfy.sh/joshpokemon6685563", {
               method: "POST",
               headers: {
-                "Title": "🧪 SIMULATED TARGET RESTOCK",
+                "Title": "SIMULATED TARGET RESTOCK",
                 "Priority": "high",
                 "Tags": "test_tube,pokemon",
                 "Click": "https://www.target.com/p/-/A-1010892076"
@@ -257,7 +257,7 @@ jobs:
                 method: "POST",
 
                 headers: {
-                  "Title": "🚨 TARGET POKÉMON RESTOCK",
+                  "Title":  "TARGET POKÉMON RESTOCK",
                   "Priority": "urgent",
                   "Tags": "rotating_light,pokemon",
                   "Click": url
