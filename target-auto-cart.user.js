@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Target Pokemon Auto Add
+// @name         Target Pokemon Auto Add - Multi Product
 // @namespace    pokemon-restock-dashboard
-// @version      2.8.0
-// @description  Target 30th Celebration ETB safe auto-add watcher
+// @version      2.7.0
+// @description  Safely auto-adds approved Pokemon 30th Celebration products on Target
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -11,459 +11,368 @@
 (function () {
     "use strict";
 
-    const TARGET_PRODUCT_ID = "A-1010892076";
+    // ============================================================
+    // APPROVED PRODUCTS
+    // ============================================================
 
-    const REQUIRED_WORDS = [
-        "30th",
-        "celebration",
-        "elite trainer box"
-    ];
+    const PRODUCTS = {
+        "A-1010892076": {
+            name: "Elite Trainer Box",
+            requiredWords: [
+                "30th",
+                "celebration",
+                "elite trainer box"
+            ]
+        },
+
+        "A-1010892070": {
+            name: "Knock Out Collection",
+            requiredWords: [
+                "30th",
+                "celebration",
+                "knock out"
+            ]
+        },
+
+        "A-1010892078": {
+            name: "Tech Sticker Collection",
+            requiredWords: [
+                "30th",
+                "celebration",
+                "tech sticker"
+            ]
+        },
+
+        "A-1010892065": {
+            name: "Greninja ex Box",
+            requiredWords: [
+                "30th",
+                "celebration",
+                "greninja"
+            ]
+        },
+
+        "A-1010892068": {
+            name: "Sylveon ex Box",
+            requiredWords: [
+                "30th",
+                "celebration",
+                "sylveon"
+            ]
+        },
+
+        "A-1010892067": {
+            name: "Poster Collection",
+            requiredWords: [
+                "30th",
+                "celebration",
+                "poster"
+            ]
+        },
+
+        "A-1010892069": {
+            name: "Celebration Tin",
+            requiredWords: [
+                "30th",
+                "celebration",
+                "tin"
+            ]
+        }
+    };
 
     const CHECK_INTERVAL = 1500;
 
     let alreadyClicked = false;
+    let statusBox = null;
+
+    // ============================================================
+    // STATUS BOX
+    // ============================================================
 
     function createStatusBox() {
-        let box = document.getElementById("pokemon-target-status");
 
-        if (!box) {
-            box = document.createElement("div");
-            box.id = "pokemon-target-status";
-
-            box.style.cssText = `
-                position:fixed;
-                top:15px;
-                left:50%;
-                transform:translateX(-50%);
-                z-index:999999;
-                background:#111;
-                color:#fff;
-                padding:12px 18px;
-                border-radius:14px;
-                font-size:15px;
-                font-weight:bold;
-                font-family:Arial,sans-serif;
-                text-align:center;
-                box-shadow:0 4px 14px rgba(0,0,0,.25);
-                max-width:92%;
-                min-width:260px;
-            `;
-
-            document.body.appendChild(box);
+        if (document.getElementById("pokemon-target-status")) {
+            statusBox = document.getElementById("pokemon-target-status");
+            return;
         }
 
-        return box;
+        const box = document.createElement("div");
+
+        box.id = "pokemon-target-status";
+
+        box.style.cssText = `
+            position: fixed;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 999999;
+            background: #111;
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 14px;
+            font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            text-align: center;
+            max-width: 90%;
+            box-shadow: 0 4px 14px rgba(0,0,0,.35);
+        `;
+
+        box.textContent = "🔍 Checking Target product...";
+
+        document.body.appendChild(box);
+
+        statusBox = box;
     }
 
-    function setStatus(text) {
-        createStatusBox().textContent = text;
-    }
+    function setStatus(message) {
 
-    function isCorrectURL() {
-        return window.location.href
-            .toLowerCase()
-            .includes(TARGET_PRODUCT_ID.toLowerCase());
-    }
-
-    function findProductTitle() {
-        return Array.from(
-            document.querySelectorAll("h1")
-        ).find(el => {
-
-            const text = (
-                el.innerText ||
-                el.textContent ||
-                ""
-            ).toLowerCase();
-
-            return REQUIRED_WORDS.every(word =>
-                text.includes(word)
-            );
-
-        }) || null;
-    }
-
-    /*
-     * HARD SOLD-OUT LOCK.
-     *
-     * Target currently shows "Sold out"
-     * close to the ETB title.
-     *
-     * If that message exists, clicking is forbidden.
-     */
-    function mainProductIsSoldOut() {
-
-        const title = findProductTitle();
-
-        if (!title) {
-            return true;
+        if (!statusBox) {
+            createStatusBox();
         }
 
-        const titleY =
-            title.getBoundingClientRect().top +
-            window.scrollY;
+        statusBox.textContent = message;
+    }
+
+    // ============================================================
+    // FIND CURRENT PRODUCT
+    // ============================================================
+
+    function getCurrentProduct() {
+
+        const url = window.location.href;
+
+        for (const productId of Object.keys(PRODUCTS)) {
+
+            if (url.includes(productId)) {
+
+                return {
+                    id: productId,
+                    ...PRODUCTS[productId]
+                };
+            }
+        }
+
+        return null;
+    }
+
+    // ============================================================
+    // VERIFY PAGE BELONGS TO PRODUCT
+    // ============================================================
+
+    function pageMatchesProduct(product) {
+
+        const pageText =
+            (document.body.innerText || "")
+                .toLowerCase();
+
+        return product.requiredWords.every(word =>
+            pageText.includes(word.toLowerCase())
+        );
+    }
+
+    // ============================================================
+    // SOLD OUT SAFETY LOCK
+    // ============================================================
+
+    function pageShowsSoldOut() {
+
+        const pageText =
+            (document.body.innerText || "")
+                .toLowerCase();
+
+        const soldOutWords = [
+            "out of stock",
+            "sold out",
+            "temporarily out of stock"
+        ];
+
+        return soldOutWords.some(word =>
+            pageText.includes(word)
+        );
+    }
+
+    // ============================================================
+    // FIND SAFE PRODUCT AREA
+    // ============================================================
+
+    function findProductArea(product) {
 
         const elements = Array.from(
             document.querySelectorAll(
-                "div, span, p"
+                "main, section, div"
             )
         );
 
-        for (const el of elements) {
+        let bestMatch = null;
+        let bestScore = 0;
 
-            const text = (
-                el.innerText ||
-                el.textContent ||
-                ""
-            )
-                .trim()
-                .toLowerCase();
+        for (const element of elements) {
 
-            if (
-                text !== "sold out" &&
-                text !== "out of stock"
-            ) {
-                continue;
+            const text =
+                (element.innerText || "")
+                    .toLowerCase();
+
+            if (!text) continue;
+
+            let score = 0;
+
+            for (const word of product.requiredWords) {
+
+                if (text.includes(word.toLowerCase())) {
+                    score++;
+                }
             }
 
-            const y =
-                el.getBoundingClientRect().top +
-                window.scrollY;
+            if (
+                score > bestScore &&
+                score >= Math.max(2, product.requiredWords.length - 1)
+            ) {
 
-            const distance =
-                Math.abs(y - titleY);
-
-            /*
-             * Main product stock wording only.
-             */
-            if (distance < 650) {
-                return true;
+                bestMatch = element;
+                bestScore = score;
             }
         }
 
-        return false;
+        return bestMatch;
     }
 
-    function getVisibleAddToCartButtons() {
+    // ============================================================
+    // FIND ADD TO CART ONLY INSIDE PRODUCT AREA
+    // ============================================================
 
-        return Array.from(
-            document.querySelectorAll("button")
-        ).filter(button => {
+    function findSafeAddToCart(product) {
 
-            const text = (
-                button.innerText ||
-                button.textContent ||
-                ""
-            )
-                .trim()
-                .toLowerCase();
+        const productArea =
+            findProductArea(product);
 
-            return (
-                (
-                    text === "add to cart" ||
-                    text.startsWith("add to cart")
-                ) &&
-                button.offsetParent !== null
-            );
-        });
-    }
-
-    /*
-     * Score evidence around a button.
-     *
-     * Strong preference is given to DOM areas
-     * containing the actual ETB title.
-     */
-    function scoreButton(button) {
-
-        let score = 0;
-        let node = button;
-
-        for (
-            let depth = 0;
-            depth < 10 && node;
-            depth++
-        ) {
-
-            const text = (
-                node.innerText ||
-                node.textContent ||
-                ""
-            ).toLowerCase();
-
-            if (
-                text.includes("30th") &&
-                text.includes("celebration")
-            ) {
-                score += 8;
-            }
-
-            if (
-                text.includes(
-                    "elite trainer box"
-                )
-            ) {
-                score += 8;
-            }
-
-            if (
-                text.includes("69.99")
-            ) {
-                score += 2;
-            }
-
-            if (
-                text.includes("out of stock") ||
-                text.includes("sold out")
-            ) {
-                score += 2;
-            }
-
-            node = node.parentElement;
-        }
-
-        return score;
-    }
-
-    /*
-     * Locate ONLY the real main-product button.
-     *
-     * Recommendation buttons farther down the page
-     * are rejected by both location and product evidence.
-     */
-    function findRealEtbButton() {
-
-        const title = findProductTitle();
-
-        if (!title) {
+        if (!productArea) {
             return null;
         }
-
-        const titleRect =
-            title.getBoundingClientRect();
-
-        const titleY =
-            titleRect.top +
-            window.scrollY;
 
         const buttons =
-            getVisibleAddToCartButtons();
+            Array.from(
+                productArea.querySelectorAll("button")
+            );
 
-        const candidates =
-            buttons.map(button => {
+        const matches =
+            buttons.filter(button => {
 
-                const rect =
-                    button.getBoundingClientRect();
+                const text =
+                    (button.innerText ||
+                     button.textContent ||
+                     "")
+                        .trim()
+                        .toLowerCase();
 
-                const buttonY =
-                    rect.top +
-                    window.scrollY;
-
-                const distance =
-                    buttonY - titleY;
-
-                return {
-                    button,
-                    distance,
-                    score: scoreButton(button)
-                };
-
-            }).filter(item => {
-
-                /*
-                 * Real Target purchase button is below
-                 * the main title/product image.
-                 *
-                 * Buttons much farther down are likely
-                 * recommendation products.
-                 */
                 return (
-                    item.distance > 0 &&
-                    item.distance < 2300
+                    text.includes("add to cart") &&
+                    !button.disabled &&
+                    button.offsetParent !== null
                 );
             });
 
-        if (!candidates.length) {
+        // EXTREME SAFETY:
+        // More than one button means we refuse to click.
+
+        if (matches.length !== 1) {
             return null;
         }
 
-        candidates.sort((a, b) => {
-
-            if (b.score !== a.score) {
-                return b.score - a.score;
-            }
-
-            return a.distance - b.distance;
-        });
-
-        const best = candidates[0];
-
-        /*
-         * Refuse to act if another button has the
-         * exact same score and nearly the same distance.
-         */
-        const ambiguous =
-            candidates.slice(1).some(item => {
-
-                return (
-                    item.score === best.score &&
-                    Math.abs(
-                        item.distance -
-                        best.distance
-                    ) < 350
-                );
-            });
-
-        if (ambiguous) {
-            return null;
-        }
-
-        return best.button;
+        return matches[0];
     }
 
-    function checkStock() {
+    // ============================================================
+    // MAIN CHECK
+    // ============================================================
 
-        /*
-         * LOCK 1:
-         * Must be exact product URL.
-         */
-        if (!isCorrectURL()) {
+    function checkTarget() {
 
-            alreadyClicked = false;
+        if (alreadyClicked) {
+            return;
+        }
+
+        const product =
+            getCurrentProduct();
+
+        // --------------------------------------------------------
+        // NOT ONE OF OUR APPROVED PRODUCTS
+        // --------------------------------------------------------
+
+        if (!product) {
 
             setStatus(
-                "⚪ WRONG PRODUCT — NOT ACTIVE"
+                "🔒 NOT AN APPROVED POKÉMON PRODUCT"
             );
 
             return;
         }
 
-        /*
-         * LOCK 2:
-         * Must find exact ETB title.
-         */
-        const title = findProductTitle();
+        // --------------------------------------------------------
+        // PAGE TEXT MUST MATCH PRODUCT
+        // --------------------------------------------------------
 
-        if (!title) {
+        if (!pageMatchesProduct(product)) {
 
             setStatus(
-                "🔎 WAITING FOR TARGET PRODUCT"
+                `🔒 ${product.name} — PRODUCT VERIFICATION FAILED`
             );
 
             return;
         }
 
-        /*
-         * LOCK 3:
-         * Sold-out message forbids clicking.
-         */
-        if (mainProductIsSoldOut()) {
+        // --------------------------------------------------------
+        // HARD SOLD OUT LOCK
+        // --------------------------------------------------------
 
-            alreadyClicked = false;
+        if (pageShowsSoldOut()) {
 
             setStatus(
-                "🟡 SOLD OUT — WATCHING"
+                `🟡 ${product.name} — SOLD OUT — WATCHING`
             );
 
             return;
         }
 
-        /*
-         * Find our already-tested real ETB button.
-         */
+        // --------------------------------------------------------
+        // LOOK FOR SAFE ADD TO CART BUTTON
+        // --------------------------------------------------------
+
         const button =
-            findRealEtbButton();
+            findSafeAddToCart(product);
 
         if (!button) {
 
             setStatus(
-                "🟠 STOCK CHANGED — SAFE ETB BUTTON NOT CONFIRMED"
+                `🔍 ${product.name} — WATCHING FOR ADD TO CART`
             );
 
             return;
         }
 
-        /*
-         * Disabled button = definitely don't click.
-         */
+        // --------------------------------------------------------
+        // FINAL SAFETY CHECK
+        // --------------------------------------------------------
+
         if (
             button.disabled ||
-            button.getAttribute(
-                "aria-disabled"
-            ) === "true"
+            button.offsetParent === null
         ) {
 
-            alreadyClicked = false;
-
-            setStatus(
-                "🟡 ETB BUTTON DISABLED — WATCHING"
-            );
-
             return;
         }
 
-        /*
-         * LOCK 4:
-         * Recheck sold-out status immediately
-         * before the click.
-         */
-        if (mainProductIsSoldOut()) {
-
-            alreadyClicked = false;
-
-            setStatus(
-                "🛑 CLICK BLOCKED — SOLD OUT"
-            );
-
-            return;
-        }
-
-        /*
-         * LOCK 5:
-         * Never click twice.
-         */
-        if (alreadyClicked) {
-
-            setStatus(
-                "✅ ETB ADD TO CART CLICK SENT"
-            );
-
-            return;
-        }
-
-        /*
-         * FINAL BUTTON TEXT CHECK.
-         */
-        const buttonText = (
-            button.innerText ||
-            button.textContent ||
-            ""
-        )
-            .trim()
-            .toLowerCase();
-
-        if (
-            !buttonText.startsWith(
-                "add to cart"
-            )
-        ) {
-
-            setStatus(
-                "🛑 CLICK BLOCKED — BUTTON CHANGED"
-            );
-
-            return;
-        }
-
-        /*
-         * Everything passed.
-         *
-         * Click THIS exact verified button once.
-         */
         alreadyClicked = true;
 
         setStatus(
-            "🟢 ETB AVAILABLE — ADDING TO CART"
+            `🟢 ${product.name} — ADDING TO CART`
+        );
+
+        console.log(
+            "[Pokemon Auto Add]",
+            "Clicking verified button for:",
+            product.name,
+            product.id
         );
 
         button.click();
@@ -471,25 +380,22 @@
         setTimeout(() => {
 
             setStatus(
-                "✅ ETB ADD TO CART CLICK SENT"
+                `✅ ${product.name} — ADD TO CART CLICKED`
             );
 
-        }, 800);
+        }, 500);
     }
+
+    // ============================================================
+    // START
+    // ============================================================
 
     createStatusBox();
 
-    setStatus(
-        "🔎 STARTING TARGET ETB WATCH"
-    );
-
-    setTimeout(
-        checkStock,
-        1000
-    );
+    checkTarget();
 
     setInterval(
-        checkStock,
+        checkTarget,
         CHECK_INTERVAL
     );
 
