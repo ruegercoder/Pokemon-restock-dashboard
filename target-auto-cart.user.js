@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add
 // @namespace    pokemon-restock-dashboard
-// @version      2.7.0-test
-// @description  Target ETB scoped Add to Cart detection - NO CLICK TEST
+// @version      2.7.1-test
+// @description  Target ETB simulated in-stock safety test - NO REAL CLICK
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -20,6 +20,8 @@
     ];
 
     const CHECK_INTERVAL = 1500;
+
+    let simulateInStock = false;
 
     function createStatusBox() {
         let box = document.getElementById("pokemon-target-status");
@@ -43,8 +45,40 @@
                 font-family:Arial,sans-serif;
                 text-align:center;
                 box-shadow:0 4px 14px rgba(0,0,0,.25);
-                max-width:90%;
+                max-width:92%;
+                min-width:250px;
             `;
+
+            const statusText = document.createElement("div");
+            statusText.id = "pokemon-target-status-text";
+            statusText.style.marginBottom = "10px";
+
+            const testButton = document.createElement("button");
+            testButton.id = "pokemon-test-stock-button";
+            testButton.textContent = "TEST IN-STOCK";
+
+            testButton.style.cssText = `
+                border:none;
+                border-radius:10px;
+                padding:9px 14px;
+                font-size:14px;
+                font-weight:bold;
+                cursor:pointer;
+            `;
+
+            testButton.addEventListener("click", () => {
+                simulateInStock = !simulateInStock;
+
+                testButton.textContent =
+                    simulateInStock
+                        ? "STOP TEST"
+                        : "TEST IN-STOCK";
+
+                checkStock();
+            });
+
+            box.appendChild(statusText);
+            box.appendChild(testButton);
 
             document.body.appendChild(box);
         }
@@ -53,7 +87,14 @@
     }
 
     function setStatus(text) {
-        createStatusBox().textContent = text;
+        createStatusBox();
+
+        const statusText =
+            document.getElementById(
+                "pokemon-target-status-text"
+            );
+
+        statusText.textContent = text;
     }
 
     function isCorrectURL() {
@@ -129,13 +170,6 @@
         return false;
     }
 
-    /*
-     * Find Add to Cart ONLY if it is physically
-     * near the MAIN product title.
-     *
-     * Recommendation buttons far down the page
-     * are rejected.
-     */
     function findScopedAddToCartButton() {
 
         const title = findProductTitle();
@@ -196,10 +230,6 @@
                         titleCenterY
                     );
 
-                /*
-                 * Hard distance boundary:
-                 * button must be close to main ETB.
-                 */
                 return verticalDistance < 900;
             });
 
@@ -250,8 +280,7 @@
             return;
         }
 
-        const title =
-            findProductTitle();
+        const title = findProductTitle();
 
         if (!title) {
 
@@ -265,19 +294,27 @@
         }
 
         /*
-         * SOLD OUT ALWAYS WINS.
+         * NORMAL MODE
          */
-        if (mainProductIsSoldOut()) {
+        if (!simulateInStock) {
 
-            clearTestHighlights();
+            if (mainProductIsSoldOut()) {
 
-            setStatus(
-                "🟡 SOLD OUT — SAFETY LOCK ACTIVE"
-            );
+                clearTestHighlights();
 
-            return;
+                setStatus(
+                    "🟡 SOLD OUT — SAFETY LOCK ACTIVE"
+                );
+
+                return;
+            }
         }
 
+        /*
+         * TEST MODE:
+         * Temporarily ignore the sold-out message.
+         * We still DO NOT CLICK anything.
+         */
         const button =
             findScopedAddToCartButton();
 
@@ -285,42 +322,39 @@
 
             clearTestHighlights();
 
-            setStatus(
-                "🟠 NO SAFE ETB BUTTON FOUND"
-            );
+            if (simulateInStock) {
+                setStatus(
+                    "🧪 TEST MODE — NO SAFE ETB BUTTON FOUND"
+                );
+            } else {
+                setStatus(
+                    "🟠 NO SAFE ETB BUTTON FOUND"
+                );
+            }
 
             return;
         }
 
-        /*
-         * SECOND sold-out check.
-         */
-        if (mainProductIsSoldOut()) {
-
-            clearTestHighlights();
-
-            setStatus(
-                "🛑 BUTTON BLOCKED — SOLD OUT"
-            );
-
-            return;
-        }
-
-        /*
-         * TEST ONLY:
-         * highlight, but NEVER CLICK.
-         */
         highlightCandidate(button);
 
+        if (simulateInStock) {
+
+            setStatus(
+                "🧪 TEST MODE — SAFE BUTTON FOUND"
+            );
+
+            return;
+        }
+
         setStatus(
-            "🟢 SAFE ETB BUTTON FOUND — TEST ONLY"
+            "🟢 SAFE ETB BUTTON FOUND — NO CLICK"
         );
     }
 
     createStatusBox();
 
     setStatus(
-        "🔎 STARTING v2.7 SAFE TEST"
+        "🔎 STARTING v2.7.1 TEST"
     );
 
     setTimeout(
