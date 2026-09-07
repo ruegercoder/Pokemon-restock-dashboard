@@ -1,9 +1,10 @@
 // ==UserScript==
-// @name         Best Buy Pokemon Auto Add - LIVE + Quantity
+// @name         Best Buy Pokemon Auto Add - LIVE + Safe Quantity
 // @namespace    pokemon-restock-dashboard
-// @version      1.3.0
-// @description  Best Buy Pokemon exact-product auto add with quantity setting
+// @version      1.3.1
+// @description  Best Buy Pokemon exact-product auto add with SKU-locked quantity handling
 // @match        https://www.bestbuy.com/product/*
+// @match        https://www.bestbuy.com/cart*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -24,7 +25,6 @@
         "ultra-premium collection"
     ];
 
-    // This Best Buy product is limited to 1 per order.
     const DESIRED_QUANTITY = 2;
 
     const CHECK_INTERVAL = 1200;
@@ -40,7 +40,7 @@
 
 
     // ============================================================
-    // BASIC HELPERS
+    // HELPERS
     // ============================================================
 
     function clean(text) {
@@ -51,9 +51,7 @@
     }
 
     function getPageText() {
-        return clean(
-            document.body?.innerText || ""
-        );
+        return clean(document.body?.innerText || "");
     }
 
 
@@ -141,8 +139,7 @@
         }
 
         return REQUIRED_WORDS.every(
-            word =>
-                text.includes(word)
+            word => text.includes(word)
         );
     }
 
@@ -228,15 +225,12 @@
                     return false;
                 }
 
-                if (
-                    rect.height < 38
-                ) {
+                if (rect.height < 38) {
                     return false;
                 }
 
                 return true;
             });
-
 
         if (!candidates.length) {
             return null;
@@ -246,18 +240,13 @@
             return candidates[0];
         }
 
-
         const anchors =
             findFulfillmentAnchors();
 
         let bestCandidate = null;
         let bestDistance = Infinity;
 
-
-        for (
-            const candidate
-            of candidates
-        ) {
+        for (const candidate of candidates) {
             const buttonRect =
                 candidate.getBoundingClientRect();
 
@@ -266,11 +255,7 @@
                 window.scrollY +
                 buttonRect.height / 2;
 
-
-            for (
-                const anchor
-                of anchors
-            ) {
+            for (const anchor of anchors) {
                 const anchorRect =
                     anchor.getBoundingClientRect();
 
@@ -298,7 +283,6 @@
             }
         }
 
-
         if (
             bestCandidate &&
             bestDistance < 700
@@ -319,36 +303,94 @@
             getPageText();
 
         return (
-            text.includes(
-                "added to cart"
-            ) ||
-            text.includes(
-                "added to your cart"
-            )
+            text.includes("added to cart") ||
+            text.includes("added to your cart")
         );
     }
 
 
     // ============================================================
-    // QUANTITY HELPERS
+    // SAFE CART ITEM FINDER
     // ============================================================
 
-    function findQuantitySelect() {
-        const selects = [
+    function findTargetCartItem() {
+        const possibleItems = [
             ...document.querySelectorAll(
+                "li, article, section, div"
+            )
+        ];
+
+        const matches =
+            possibleItems.filter(el => {
+
+                const text =
+                    clean(el.innerText || "");
+
+                if (!text.includes(TARGET_SKU)) {
+                    return false;
+                }
+
+                const hasPokemonWords =
+                    REQUIRED_WORDS.some(
+                        word =>
+                            text.includes(word)
+                    );
+
+                return hasPokemonWords;
+            });
+
+
+        if (!matches.length) {
+            return null;
+        }
+
+
+        // Prefer the smallest matching container,
+        // which is most likely the actual cart item.
+        matches.sort((a, b) => {
+            const aText =
+                clean(a.innerText || "");
+
+            const bText =
+                clean(b.innerText || "");
+
+            return (
+                aText.length -
+                bText.length
+            );
+        });
+
+
+        return matches[0];
+    }
+
+
+    // ============================================================
+    // SAFE QUANTITY CONTROL
+    // ============================================================
+
+    function findQuantityControlInTargetItem(
+        cartItem
+    ) {
+        if (!cartItem) {
+            return null;
+        }
+
+
+        const selects = [
+            ...cartItem.querySelectorAll(
                 "select"
             )
         ];
 
-        for (
-            const select
-            of selects
-        ) {
-            const nearbyText = clean(
-                select.closest(
-                    "div, section, form, li"
-                )?.innerText || ""
-            );
+
+        for (const select of selects) {
+            const nearbyText =
+                clean(
+                    select.closest(
+                        "div, form, section"
+                    )?.innerText || ""
+                );
 
             if (
                 nearbyText.includes(
@@ -362,92 +404,116 @@
             }
         }
 
+
         return null;
     }
 
 
     function setQuantityIfPossible() {
-
         if (
             DESIRED_QUANTITY <= 1
         ) {
-            return;
-        }
+            stopped = true;
 
-
-        const select =
-            findQuantitySelect();
-
-        if (!select) {
             setStatus(
-                `✅ ADDED TO CART — QTY CONTROL NOT FOUND`,
+                "✅ ADDED TO CART — QTY 1 — STOPPED",
                 "#26732b"
             );
 
-            stopped = true;
+            return;
+        }
+
+
+        const cartItem =
+            findTargetCartItem();
+
+
+        if (!cartItem) {
+            setStatus(
+                "🔴 SAFETY LOCK — TARGET CART ITEM NOT VERIFIED",
+                "#9b1c1c"
+            );
 
             return;
         }
+
+
+        const quantityControl =
+            findQuantityControlInTargetItem(
+                cartItem
+            );
+
+
+        if (!quantityControl) {
+            setStatus(
+                "🟡 TARGET ITEM FOUND — QTY CONTROL NOT FOUND",
+                "#8a6d00"
+            );
+
+            return;
+        }
+
+
+        const desired =
+            String(DESIRED_QUANTITY);
 
 
         const options = [
-            ...select.options
+            ...quantityControl.options
         ];
-
-        const desired =
-            String(
-                DESIRED_QUANTITY
-            );
 
 
         const matchingOption =
-            options.find(
-                option =>
-                    clean(
-                        option.value
-                    ) === desired ||
+            options.find(option => {
+
+                const value =
+                    clean(option.value);
+
+                const text =
                     clean(
                         option.textContent
-                    ) === desired
-            );
+                    );
+
+                return (
+                    value === desired ||
+                    text === desired
+                );
+            });
 
 
         if (!matchingOption) {
+            stopped = true;
 
             setStatus(
-                `✅ ADDED TO CART — MAX QTY LOWER THAN ${DESIRED_QUANTITY}`,
+                `✅ TARGET ITEM VERIFIED — BEST BUY LIMIT BELOW QTY ${DESIRED_QUANTITY}`,
                 "#26732b"
             );
-
-            stopped = true;
 
             return;
         }
 
 
-        select.value =
+        quantityControl.value =
             matchingOption.value;
 
 
-        select.dispatchEvent(
+        quantityControl.dispatchEvent(
             new Event(
                 "change",
                 {
-                    bubbles:
-                        true
+                    bubbles: true
                 }
             )
         );
 
 
+        stopped = true;
+
+
         setStatus(
-            `✅ ADDED TO CART — QTY ${DESIRED_QUANTITY}`,
+            `✅ TARGET SKU ${TARGET_SKU} — QTY ${DESIRED_QUANTITY} SET`,
             "#26732b"
         );
-
-
-        stopped =
-            true;
     }
 
 
@@ -461,6 +527,7 @@
         const now =
             Date.now();
 
+
         if (
             now -
             lastClickTime <
@@ -470,13 +537,14 @@
         }
 
 
-        const text = clean(
-            control.innerText ||
-            control.textContent ||
-            control.getAttribute(
-                "aria-label"
-            )
-        );
+        const text =
+            clean(
+                control.innerText ||
+                control.textContent ||
+                control.getAttribute(
+                    "aria-label"
+                )
+            );
 
 
         if (
@@ -517,11 +585,8 @@
 
 
         control.scrollIntoView({
-            behavior:
-                "instant",
-
-            block:
-                "center"
+            behavior: "instant",
+            block: "center"
         });
 
 
@@ -530,11 +595,10 @@
 
 
     // ============================================================
-    // MAIN WATCHER
+    // PRODUCT PAGE WATCHER
     // ============================================================
 
-    function checkProduct() {
-
+    function checkProductPage() {
         if (stopped) {
             return;
         }
@@ -566,30 +630,14 @@
         if (
             cartSuccessDetected()
         ) {
-
-            if (
-                DESIRED_QUANTITY <= 1
-            ) {
-                stopped = true;
-
-                setStatus(
-                    "✅ ADDED TO CART — QTY 1 — STOPPED",
-                    "#26732b"
-                );
-
-                return;
-            }
-
-
             setStatus(
-                `🟢 ADDED TO CART — SETTING QTY ${DESIRED_QUANTITY}`,
+                `🟢 ADDED TO CART — PREPARING QTY ${DESIRED_QUANTITY}`,
                 "#26732b"
             );
 
-
             setTimeout(
                 setQuantityIfPossible,
-                1000
+                1200
             );
 
             return;
@@ -610,13 +658,14 @@
         }
 
 
-        const text = clean(
-            control.innerText ||
-            control.textContent ||
-            control.getAttribute(
-                "aria-label"
-            )
-        );
+        const text =
+            clean(
+                control.innerText ||
+                control.textContent ||
+                control.getAttribute(
+                    "aria-label"
+                )
+            );
 
 
         if (
@@ -652,8 +701,47 @@
 
 
     // ============================================================
+    // CART PAGE WATCHER
+    // ============================================================
+
+    function checkCartPage() {
+        if (stopped) {
+            return;
+        }
+
+
+        setStatus(
+            `🔵 CHECKING CART FOR SKU ${TARGET_SKU}`,
+            "#325f91"
+        );
+
+
+        setQuantityIfPossible();
+    }
+
+
+    // ============================================================
     // START
     // ============================================================
+
+    if (
+        location.pathname
+            .toLowerCase()
+            .includes("/cart")
+    ) {
+        setTimeout(
+            checkCartPage,
+            1200
+        );
+
+        setInterval(
+            checkCartPage,
+            CHECK_INTERVAL
+        );
+
+        return;
+    }
+
 
     setStatus(
         "🔵 LOADING PRODUCT…",
@@ -662,13 +750,13 @@
 
 
     setTimeout(
-        checkProduct,
+        checkProductPage,
         500
     );
 
 
     setInterval(
-        checkProduct,
+        checkProductPage,
         CHECK_INTERVAL
     );
 
