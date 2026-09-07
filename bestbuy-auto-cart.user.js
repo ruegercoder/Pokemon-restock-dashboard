@@ -25,7 +25,7 @@
     ];
 
     // This Best Buy product is limited to 1 per order.
-    const DESIRED_QUANTITY = 1;
+    const DESIRED_QUANTITY = 2;
 
     const CHECK_INTERVAL = 1200;
     const CLICK_COOLDOWN = 2500;
