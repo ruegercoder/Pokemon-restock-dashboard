@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Best Buy Pokemon Auto Add - LIVE
+// @name         Best Buy Pokemon Auto Add - LIVE + Quantity
 // @namespace    pokemon-restock-dashboard
-// @version      1.2.1
-// @description  Best Buy Pokemon exact-product auto add with startup grace period
+// @version      1.3.0
+// @description  Best Buy Pokemon exact-product auto add with quantity setting
 // @match        https://www.bestbuy.com/product/*
 // @grant        none
 // @run-at       document-idle
@@ -12,7 +12,7 @@
     "use strict";
 
     // ============================================================
-    // TARGET PRODUCT
+    // PRODUCT SETTINGS
     // ============================================================
 
     const TARGET_SKU = "6685563";
@@ -24,11 +24,11 @@
         "ultra-premium collection"
     ];
 
+    // This Best Buy product is limited to 1 per order.
+    const DESIRED_QUANTITY = 1;
+
     const CHECK_INTERVAL = 1200;
     const CLICK_COOLDOWN = 2500;
-
-    // Give Best Buy time to render the title/SKU before declaring
-    // that we're on the wrong product.
     const STARTUP_GRACE_PERIOD = 7000;
 
     const SCRIPT_START_TIME = Date.now();
@@ -38,8 +38,9 @@
     let clickCount = 0;
     let stopped = false;
 
+
     // ============================================================
-    // TEXT HELPERS
+    // BASIC HELPERS
     // ============================================================
 
     function clean(text) {
@@ -50,19 +51,28 @@
     }
 
     function getPageText() {
-        return clean(document.body?.innerText || "");
+        return clean(
+            document.body?.innerText || ""
+        );
     }
+
 
     // ============================================================
     // STATUS BANNER
     // ============================================================
 
     function getStatusBox() {
-        let box = document.getElementById("bestbuy-pokemon-status");
+        let box =
+            document.getElementById(
+                "bestbuy-pokemon-status"
+            );
 
         if (!box) {
-            box = document.createElement("div");
-            box.id = "bestbuy-pokemon-status";
+            box =
+                document.createElement("div");
+
+            box.id =
+                "bestbuy-pokemon-status";
 
             box.style.cssText = `
                 position: fixed;
@@ -88,25 +98,39 @@
         return box;
     }
 
-    function setStatus(text, color = "#8a6d00") {
-        if (lastStatus === text) return;
+    function setStatus(
+        text,
+        color = "#8a6d00"
+    ) {
+        if (lastStatus === text) {
+            return;
+        }
 
         lastStatus = text;
 
-        const box = getStatusBox();
+        const box =
+            getStatusBox();
+
         box.textContent = text;
         box.style.background = color;
 
-        console.log("[BEST BUY POKEMON]", text);
+        console.log(
+            "[BEST BUY POKEMON]",
+            text
+        );
     }
 
+
     // ============================================================
-    // PRODUCT SAFETY LOCK
+    // PRODUCT VERIFICATION
     // ============================================================
 
     function correctProduct() {
-        const text = getPageText();
-        const url = location.href.toLowerCase();
+        const text =
+            getPageText();
+
+        const url =
+            location.href.toLowerCase();
 
         const skuMatches =
             text.includes(TARGET_SKU) ||
@@ -116,17 +140,20 @@
             return false;
         }
 
-        return REQUIRED_WORDS.every(word =>
-            text.includes(word)
+        return REQUIRED_WORDS.every(
+            word =>
+                text.includes(word)
         );
     }
 
     function stillInStartupGracePeriod() {
         return (
-            Date.now() - SCRIPT_START_TIME <
+            Date.now() -
+            SCRIPT_START_TIME <
             STARTUP_GRACE_PERIOD
         );
     }
+
 
     // ============================================================
     // FIND FULFILLMENT AREA
@@ -134,7 +161,9 @@
 
     function findFulfillmentAnchors() {
         const elements = [
-            ...document.querySelectorAll("div, span, p, li")
+            ...document.querySelectorAll(
+                "div, span, p, li"
+            )
         ];
 
         return elements.filter(el => {
@@ -144,7 +173,6 @@
                 ""
             );
 
-            // Ignore giant page-level containers.
             if (text.length > 140) {
                 return false;
             }
@@ -156,8 +184,9 @@
         });
     }
 
+
     // ============================================================
-    // FIND REAL PRODUCT PURCHASE CONTROL
+    // FIND MAIN PURCHASE CONTROL
     // ============================================================
 
     function findPurchaseControl() {
@@ -167,40 +196,47 @@
             )
         ];
 
-        const candidates = controls.filter(el => {
-            if (!el.isConnected) {
-                return false;
-            }
+        const candidates =
+            controls.filter(el => {
 
-            const text = clean(
-                el.innerText ||
-                el.textContent ||
-                el.getAttribute("aria-label")
-            );
+                if (!el.isConnected) {
+                    return false;
+                }
 
-            if (
-                text !== "coming soon" &&
-                text !== "add to cart"
-            ) {
-                return false;
-            }
+                const text = clean(
+                    el.innerText ||
+                    el.textContent ||
+                    el.getAttribute(
+                        "aria-label"
+                    )
+                );
 
-            const rect = el.getBoundingClientRect();
+                if (
+                    text !== "coming soon" &&
+                    text !== "add to cart"
+                ) {
+                    return false;
+                }
 
-            // Must look like the large Best Buy purchase button.
-            if (
-                rect.width <
-                window.innerWidth * 0.65
-            ) {
-                return false;
-            }
+                const rect =
+                    el.getBoundingClientRect();
 
-            if (rect.height < 38) {
-                return false;
-            }
+                if (
+                    rect.width <
+                    window.innerWidth * 0.65
+                ) {
+                    return false;
+                }
 
-            return true;
-        });
+                if (
+                    rect.height < 38
+                ) {
+                    return false;
+                }
+
+                return true;
+            });
+
 
         if (!candidates.length) {
             return null;
@@ -210,15 +246,18 @@
             return candidates[0];
         }
 
-        // If several matching controls exist, choose the one
-        // closest to Pickup / Shipping fulfillment information.
 
-        const anchors = findFulfillmentAnchors();
+        const anchors =
+            findFulfillmentAnchors();
 
         let bestCandidate = null;
         let bestDistance = Infinity;
 
-        for (const candidate of candidates) {
+
+        for (
+            const candidate
+            of candidates
+        ) {
             const buttonRect =
                 candidate.getBoundingClientRect();
 
@@ -227,7 +266,11 @@
                 window.scrollY +
                 buttonRect.height / 2;
 
-            for (const anchor of anchors) {
+
+            for (
+                const anchor
+                of anchors
+            ) {
                 const anchorRect =
                     anchor.getBoundingClientRect();
 
@@ -242,12 +285,19 @@
                         anchorCenterY
                     );
 
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    bestCandidate = candidate;
+                if (
+                    distance <
+                    bestDistance
+                ) {
+                    bestDistance =
+                        distance;
+
+                    bestCandidate =
+                        candidate;
                 }
             }
         }
+
 
         if (
             bestCandidate &&
@@ -259,46 +309,187 @@
         return null;
     }
 
+
     // ============================================================
-    // CART SUCCESS DETECTION
+    // CART SUCCESS
     // ============================================================
 
     function cartSuccessDetected() {
-        const text = getPageText();
+        const text =
+            getPageText();
 
         return (
-            text.includes("added to cart") ||
-            text.includes("added to your cart")
+            text.includes(
+                "added to cart"
+            ) ||
+            text.includes(
+                "added to your cart"
+            )
         );
     }
 
+
     // ============================================================
-    // SAFE CLICK
+    // QUANTITY HELPERS
     // ============================================================
 
-    function clickAddToCart(control) {
-        const now = Date.now();
+    function findQuantitySelect() {
+        const selects = [
+            ...document.querySelectorAll(
+                "select"
+            )
+        ];
+
+        for (
+            const select
+            of selects
+        ) {
+            const nearbyText = clean(
+                select.closest(
+                    "div, section, form, li"
+                )?.innerText || ""
+            );
+
+            if (
+                nearbyText.includes(
+                    "quantity"
+                ) ||
+                nearbyText.includes(
+                    "qty"
+                )
+            ) {
+                return select;
+            }
+        }
+
+        return null;
+    }
+
+
+    function setQuantityIfPossible() {
 
         if (
-            now - lastClickTime <
+            DESIRED_QUANTITY <= 1
+        ) {
+            return;
+        }
+
+
+        const select =
+            findQuantitySelect();
+
+        if (!select) {
+            setStatus(
+                `✅ ADDED TO CART — QTY CONTROL NOT FOUND`,
+                "#26732b"
+            );
+
+            stopped = true;
+
+            return;
+        }
+
+
+        const options = [
+            ...select.options
+        ];
+
+        const desired =
+            String(
+                DESIRED_QUANTITY
+            );
+
+
+        const matchingOption =
+            options.find(
+                option =>
+                    clean(
+                        option.value
+                    ) === desired ||
+                    clean(
+                        option.textContent
+                    ) === desired
+            );
+
+
+        if (!matchingOption) {
+
+            setStatus(
+                `✅ ADDED TO CART — MAX QTY LOWER THAN ${DESIRED_QUANTITY}`,
+                "#26732b"
+            );
+
+            stopped = true;
+
+            return;
+        }
+
+
+        select.value =
+            matchingOption.value;
+
+
+        select.dispatchEvent(
+            new Event(
+                "change",
+                {
+                    bubbles:
+                        true
+                }
+            )
+        );
+
+
+        setStatus(
+            `✅ ADDED TO CART — QTY ${DESIRED_QUANTITY}`,
+            "#26732b"
+        );
+
+
+        stopped =
+            true;
+    }
+
+
+    // ============================================================
+    // CLICK ADD TO CART
+    // ============================================================
+
+    function clickAddToCart(
+        control
+    ) {
+        const now =
+            Date.now();
+
+        if (
+            now -
+            lastClickTime <
             CLICK_COOLDOWN
         ) {
             return;
         }
 
+
         const text = clean(
             control.innerText ||
             control.textContent ||
-            control.getAttribute("aria-label")
+            control.getAttribute(
+                "aria-label"
+            )
         );
 
-        if (text !== "add to cart") {
+
+        if (
+            text !==
+            "add to cart"
+        ) {
             return;
         }
 
-        // Re-run targeting immediately before clicking.
+
         const verifiedControl =
             findPurchaseControl();
+
 
         if (
             !verifiedControl ||
@@ -312,37 +503,48 @@
             return;
         }
 
-        lastClickTime = now;
+
+        lastClickTime =
+            now;
+
         clickCount++;
+
 
         setStatus(
             `🟢 ADD TO CART FOUND — CLICKING ${clickCount}`,
             "#26732b"
         );
 
+
         control.scrollIntoView({
-            behavior: "instant",
-            block: "center"
+            behavior:
+                "instant",
+
+            block:
+                "center"
         });
+
 
         control.click();
     }
+
 
     // ============================================================
     // MAIN WATCHER
     // ============================================================
 
     function checkProduct() {
+
         if (stopped) {
             return;
         }
 
-        // --------------------------------------------------------
-        // PRODUCT CHECK
-        // --------------------------------------------------------
 
         if (!correctProduct()) {
-            if (stillInStartupGracePeriod()) {
+
+            if (
+                stillInStartupGracePeriod()
+            ) {
                 setStatus(
                     "🔵 LOADING PRODUCT…",
                     "#325f91"
@@ -350,6 +552,7 @@
 
                 return;
             }
+
 
             setStatus(
                 "🔴 SAFETY LOCK — WRONG PRODUCT",
@@ -359,27 +562,43 @@
             return;
         }
 
-        // --------------------------------------------------------
-        // CART SUCCESS
-        // --------------------------------------------------------
 
-        if (cartSuccessDetected()) {
-            stopped = true;
+        if (
+            cartSuccessDetected()
+        ) {
+
+            if (
+                DESIRED_QUANTITY <= 1
+            ) {
+                stopped = true;
+
+                setStatus(
+                    "✅ ADDED TO CART — QTY 1 — STOPPED",
+                    "#26732b"
+                );
+
+                return;
+            }
+
 
             setStatus(
-                "✅ ADDED TO CART — STOPPED",
+                `🟢 ADDED TO CART — SETTING QTY ${DESIRED_QUANTITY}`,
                 "#26732b"
+            );
+
+
+            setTimeout(
+                setQuantityIfPossible,
+                1000
             );
 
             return;
         }
 
-        // --------------------------------------------------------
-        // FIND EXACT PURCHASE CONTROL
-        // --------------------------------------------------------
 
         const control =
             findPurchaseControl();
+
 
         if (!control) {
             setStatus(
@@ -390,39 +609,47 @@
             return;
         }
 
+
         const text = clean(
             control.innerText ||
             control.textContent ||
-            control.getAttribute("aria-label")
+            control.getAttribute(
+                "aria-label"
+            )
         );
 
-        // --------------------------------------------------------
-        // COMING SOON
-        // --------------------------------------------------------
 
-        if (text === "coming soon") {
+        if (
+            text ===
+            "coming soon"
+        ) {
             setStatus(
-                "🟡 COMING SOON — WATCHING",
+                `🟡 COMING SOON — WATCHING — QTY ${DESIRED_QUANTITY}`,
                 "#8a6d00"
             );
 
             return;
         }
 
-        // --------------------------------------------------------
-        // ADD TO CART
-        // --------------------------------------------------------
 
-        if (text === "add to cart") {
-            clickAddToCart(control);
+        if (
+            text ===
+            "add to cart"
+        ) {
+            clickAddToCart(
+                control
+            );
+
             return;
         }
 
+
         setStatus(
-            "🟡 WATCHING",
+            `🟡 WATCHING — QTY ${DESIRED_QUANTITY}`,
             "#8a6d00"
         );
     }
+
 
     // ============================================================
     // START
@@ -433,10 +660,12 @@
         "#325f91"
     );
 
+
     setTimeout(
         checkProduct,
         500
     );
+
 
     setInterval(
         checkProduct,
