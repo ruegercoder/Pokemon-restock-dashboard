@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add - Multi Product
 // @namespace    pokemon-restock-dashboard
-// @version      2.9.0-test
-// @description  Strictly verifies and safely targets approved Pokemon products on Target
+// @version      2.9.1-test
+// @description  Safely verifies approved Pokemon products and targets the correct Target Add to Cart button
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -15,12 +15,11 @@
     // SETTINGS
     // ============================================================
 
-    // SAFE TEST MODE:
-    // true  = highlight the verified button without clicking
-    // false = click the verified button
+    // true  = safely highlights the button without clicking
+    // false = automatically clicks the verified button
     const TEST_MODE = true;
 
-    const CHECK_INTERVAL = 1000;
+    const CHECK_INTERVAL = 1500;
     const MAX_CLICK_ATTEMPTS = 3;
     const RETRY_DELAY = 4000;
 
@@ -31,37 +30,65 @@
     const PRODUCTS = {
         "A-1010892076": {
             name: "Elite Trainer Box",
-            requiredWords: ["30th", "celebration", "elite trainer box"]
+            requiredWords: [
+                "30th",
+                "celebration",
+                "elite trainer box"
+            ]
         },
 
         "A-1010892070": {
             name: "Knock Out Collection",
-            requiredWords: ["30th", "celebration", "knock out"]
+            requiredWords: [
+                "30th",
+                "celebration",
+                "knock out"
+            ]
         },
 
         "A-1010892078": {
             name: "Tech Sticker Collection",
-            requiredWords: ["30th", "celebration", "tech sticker"]
+            requiredWords: [
+                "30th",
+                "celebration",
+                "tech sticker"
+            ]
         },
 
         "A-1010892065": {
             name: "Greninja ex Box",
-            requiredWords: ["30th", "celebration", "greninja"]
+            requiredWords: [
+                "30th",
+                "celebration",
+                "greninja"
+            ]
         },
 
         "A-1010892068": {
             name: "Sylveon ex Box",
-            requiredWords: ["30th", "celebration", "sylveon"]
+            requiredWords: [
+                "30th",
+                "celebration",
+                "sylveon"
+            ]
         },
 
         "A-1010892067": {
             name: "Poster Collection",
-            requiredWords: ["30th", "celebration", "poster"]
+            requiredWords: [
+                "30th",
+                "celebration",
+                "poster"
+            ]
         },
 
         "A-1010892069": {
             name: "Celebration Tin",
-            requiredWords: ["30th", "celebration", "tin"]
+            requiredWords: [
+                "30th",
+                "celebration",
+                "tin"
+            ]
         }
     };
 
@@ -73,22 +100,26 @@
     let clickAttempts = 0;
     let waitingForConfirmation = false;
     let purchaseConfirmed = false;
-    let lastUrl = location.href;
-    let testButton = null;
+    let highlightedButton = null;
+    let lastUrl = window.location.href;
 
     // ============================================================
     // STATUS BANNER
     // ============================================================
 
     function createStatusBox() {
-        statusBox = document.getElementById("pokemon-target-status");
+        const existingBox =
+            document.getElementById("pokemon-target-status");
 
-        if (statusBox) return;
+        if (existingBox) {
+            statusBox = existingBox;
+            return;
+        }
 
-        statusBox = document.createElement("div");
-        statusBox.id = "pokemon-target-status";
+        const box = document.createElement("div");
+        box.id = "pokemon-target-status";
 
-        statusBox.style.cssText = `
+        box.style.cssText = `
             position: fixed;
             top: 15px;
             left: 50%;
@@ -102,41 +133,62 @@
             font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
             font-size: 14px;
             font-weight: bold;
+            line-height: 1.3;
             text-align: center;
             max-width: 90%;
             box-shadow: 0 4px 14px rgba(0,0,0,.4);
         `;
 
-        statusBox.textContent = "🔍 Checking Target product...";
-        document.body.appendChild(statusBox);
+        box.textContent = "🔍 Checking Target product...";
+
+        document.body.appendChild(box);
+        statusBox = box;
     }
 
     function setStatus(message, color = "#111") {
-        createStatusBox();
-        statusBox.textContent = message;
-        statusBox.style.background = color;
+        if (!statusBox) {
+            createStatusBox();
+        }
+
+        // Avoid unnecessary page changes.
+        if (statusBox.textContent !== message) {
+            statusBox.textContent = message;
+        }
+
+        if (statusBox.style.background !== color) {
+            statusBox.style.background = color;
+        }
+    }
+
+    // ============================================================
+    // TEXT HELPERS
+    // ============================================================
+
+    function normalizeText(value) {
+        return String(value || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
     }
 
     // ============================================================
     // PRODUCT VERIFICATION
     // ============================================================
 
-    function normalizeText(value) {
-        return (value || "")
-            .replace(/\s+/g, " ")
-            .trim()
-            .toLowerCase();
-    }
-
     function getCurrentProduct() {
-        const match = location.href.match(/A-\d+/i);
+        const match =
+            window.location.href.match(/A-\d+/i);
 
-        if (!match) return null;
+        if (!match) {
+            return null;
+        }
 
         const productId = match[0].toUpperCase();
         const product = PRODUCTS[productId];
 
-        if (!product) return null;
+        if (!product) {
+            return null;
+        }
 
         return {
             id: productId,
@@ -156,10 +208,12 @@
     function titleMatchesProduct(product) {
         const title = getProductTitle().text;
 
-        if (!title) return false;
+        if (!title) {
+            return false;
+        }
 
-        return product.requiredWords.every(word =>
-            title.includes(normalizeText(word))
+        return product.requiredWords.every(requiredWord =>
+            title.includes(normalizeText(requiredWord))
         );
     }
 
@@ -168,7 +222,9 @@
     // ============================================================
 
     function isVisible(element) {
-        if (!element || element.disabled) return false;
+        if (!element || element.disabled) {
+            return false;
+        }
 
         const style = window.getComputedStyle(element);
         const rect = element.getBoundingClientRect();
@@ -195,15 +251,25 @@
 
         let element = button;
 
-        for (let level = 0; level < 7 && element; level++) {
-            const text = normalizeText(
-                `${element.getAttribute?.("aria-label") || ""}
-                 ${element.getAttribute?.("data-test") || ""}
-                 ${element.getAttribute?.("data-testid") || ""}
-                 ${element.className || ""}`
-            );
+        for (
+            let level = 0;
+            level < 7 && element;
+            level++
+        ) {
+            const identifyingText = normalizeText(`
+                ${element.getAttribute?.("aria-label") || ""}
+                ${element.getAttribute?.("data-test") || ""}
+                ${element.getAttribute?.("data-testid") || ""}
+                ${typeof element.className === "string"
+                    ? element.className
+                    : ""}
+            `);
 
-            if (blockedWords.some(word => text.includes(word))) {
+            if (
+                blockedWords.some(word =>
+                    identifyingText.includes(word)
+                )
+            ) {
                 return true;
             }
 
@@ -213,100 +279,132 @@
         return false;
     }
 
-    function isBelowRecommendationSection(button) {
-        const buttonTop =
-            button.getBoundingClientRect().top + window.scrollY;
-
+    function getRecommendationBoundary() {
         const headings = Array.from(
             document.querySelectorAll("h2, h3")
         );
 
-        const recommendationHeading = headings.find(heading => {
-            const text = normalizeText(heading.innerText);
+        const recommendationHeading =
+            headings.find(heading => {
+                const text =
+                    normalizeText(heading.innerText);
 
-            return [
-                "recommended",
-                "similar items",
-                "you might also like",
-                "frequently bought",
-                "more to consider"
-            ].some(word => text.includes(word));
-        });
+                return [
+                    "recommended",
+                    "similar items",
+                    "you might also like",
+                    "frequently bought",
+                    "more to consider"
+                ].some(word => text.includes(word));
+            });
 
-        if (!recommendationHeading) return false;
+        if (!recommendationHeading) {
+            return Infinity;
+        }
 
-        const headingTop =
-            recommendationHeading.getBoundingClientRect().top +
-            window.scrollY;
-
-        return buttonTop > headingTop;
+        return (
+            recommendationHeading
+                .getBoundingClientRect()
+                .top +
+            window.scrollY
+        );
     }
 
     function findSafeAddToCart() {
+        const recommendationBoundary =
+            getRecommendationBoundary();
+
         const buttons = Array.from(
             document.querySelectorAll("button")
         );
 
         const matches = buttons.filter(button => {
-            const text = normalizeText(
+            const buttonText = normalizeText(
                 button.innerText ||
                 button.textContent ||
                 button.getAttribute("aria-label")
             );
 
             const exactButtonText =
-                text === "add to cart" ||
-                text === "ship it - add to cart" ||
-                text.startsWith("add to cart for ");
+                buttonText === "add to cart" ||
+                buttonText === "ship it - add to cart" ||
+                buttonText.startsWith(
+                    "add to cart for "
+                );
 
-            return (
-                exactButtonText &&
-                isVisible(button) &&
-                !isRecommendationButton(button) &&
-                !isBelowRecommendationSection(button)
-            );
+            if (!exactButtonText) {
+                return false;
+            }
+
+            if (!isVisible(button)) {
+                return false;
+            }
+
+            if (isRecommendationButton(button)) {
+                return false;
+            }
+
+            const buttonPosition =
+                button.getBoundingClientRect().top +
+                window.scrollY;
+
+            if (
+                buttonPosition >
+                recommendationBoundary
+            ) {
+                return false;
+            }
+
+            return true;
         });
 
-        // Refuse to act unless there is exactly one safe match.
-        if (matches.length !== 1) {
-            return {
-                button: null,
-                count: matches.length
-            };
-        }
-
         return {
-            button: matches[0],
-            count: 1
+            button:
+                matches.length === 1
+                    ? matches[0]
+                    : null,
+            count: matches.length
         };
     }
 
     // ============================================================
-    // AVAILABILITY AND CART CONFIRMATION
+    // AVAILABILITY
     // ============================================================
 
     function getPrimaryPageText() {
-        const main = document.querySelector("main");
-        const text = normalizeText(main?.innerText);
+        const main =
+            document.querySelector("main");
+
+        if (!main) {
+            return "";
+        }
+
+        let text =
+            normalizeText(main.innerText);
 
         const cutoffWords = [
             "recommended",
             "similar items",
             "you might also like",
+            "frequently bought",
             "more to consider"
         ];
 
-        let cutoff = text.length;
+        let cutoffPosition = text.length;
 
-        for (const word of cutoffWords) {
-            const position = text.indexOf(word);
+        for (const cutoffWord of cutoffWords) {
+            const position =
+                text.indexOf(cutoffWord);
 
-            if (position !== -1 && position < cutoff) {
-                cutoff = position;
+            if (
+                position !== -1 &&
+                position < cutoffPosition
+            ) {
+                cutoffPosition = position;
             }
         }
 
-        return text.slice(0, cutoff);
+        return text.slice(0, cutoffPosition);
     }
 
     function pageShowsSoldOut() {
@@ -316,77 +414,77 @@
             "out of stock",
             "sold out",
             "temporarily out of stock"
-        ].some(word => text.includes(word));
+        ].some(message => text.includes(message));
     }
 
-    function cartConfirmationVisible() {
-        const text = normalizeText(document.body.innerText);
+    // ============================================================
+    // CART CONFIRMATION
+    // ============================================================
 
-        const confirmationWords = [
+    function cartConfirmationVisible() {
+        const visibleText =
+            normalizeText(
+                document.body.innerText
+            );
+
+        return [
             "added to cart",
             "added to your cart",
             "view cart",
             "go to cart"
-        ];
-
-        if (confirmationWords.some(word => text.includes(word))) {
-            return true;
-        }
-
-        const cartElements = Array.from(
-            document.querySelectorAll(
-                '[data-test*="cart"], [aria-label*="cart" i]'
-            )
+        ].some(message =>
+            visibleText.includes(message)
         );
-
-        return cartElements.some(element => {
-            const text = normalizeText(
-                `${element.innerText || ""}
-                 ${element.getAttribute("aria-label") || ""}`
-            );
-
-            return (
-                /\bcart\b/.test(text) &&
-                /\b[1-9]\d*\b/.test(text)
-            );
-        });
     }
 
     // ============================================================
-    // TEST MODE
+    // SAFE TEST MODE
     // ============================================================
 
-    function highlightButton(button, product) {
-        if (testButton === button) return;
+    function highlightVerifiedButton(
+        button,
+        product
+    ) {
+        if (highlightedButton !== button) {
+            if (highlightedButton) {
+                highlightedButton.style.outline = "";
+                highlightedButton.style.boxShadow = "";
+            }
 
-        if (testButton) {
-            testButton.style.outline = "";
-            testButton.style.boxShadow = "";
+            highlightedButton = button;
+
+            button.style.outline =
+                "6px solid #00e676";
+
+            button.style.boxShadow =
+                "0 0 0 10px rgba(0,230,118,.35)";
+
+            button.scrollIntoView({
+                behavior: "smooth",
+                block: "center"
+            });
         }
-
-        testButton = button;
-
-        button.style.outline = "6px solid #00e676";
-        button.style.boxShadow =
-            "0 0 0 10px rgba(0,230,118,.35)";
 
         setStatus(
             `🧪 TEST PASSED — ${product.name} BUTTON VERIFIED — NOT CLICKED`,
             "#006b36"
         );
-
-        button.scrollIntoView({
-            behavior: "smooth",
-            block: "center"
-        });
     }
 
     // ============================================================
-    // LIVE CLICKING
+    // LIVE AUTO-ADD
     // ============================================================
 
-    function clickVerifiedButton(button, product) {
-        if (waitingForConfirmation || purchaseConfirmed) return;
+    function clickVerifiedButton(
+        button,
+        product
+    ) {
+        if (
+            waitingForConfirmation ||
+            purchaseConfirmed
+        ) {
+            return;
+        }
 
         clickAttempts++;
         waitingForConfirmation = true;
@@ -406,7 +504,7 @@
 
         button.click();
 
-        setTimeout(() => {
+        window.setTimeout(() => {
             if (cartConfirmationVisible()) {
                 purchaseConfirmed = true;
                 waitingForConfirmation = false;
@@ -421,7 +519,10 @@
 
             waitingForConfirmation = false;
 
-            if (clickAttempts >= MAX_CLICK_ATTEMPTS) {
+            if (
+                clickAttempts >=
+                MAX_CLICK_ATTEMPTS
+            ) {
                 setStatus(
                     `⚠️ ${product.name} — CART NOT CONFIRMED — TAP MANUALLY`,
                     "#9a5b00"
@@ -440,15 +541,19 @@
     // ============================================================
 
     function checkTarget() {
-        if (location.href !== lastUrl) {
-            lastUrl = location.href;
+        if (
+            window.location.href !==
+            lastUrl
+        ) {
+            lastUrl = window.location.href;
             clickAttempts = 0;
             waitingForConfirmation = false;
             purchaseConfirmed = false;
-            testButton = null;
+            highlightedButton = null;
         }
 
-        const product = getCurrentProduct();
+        const product =
+            getCurrentProduct();
 
         if (!product) {
             setStatus(
@@ -466,7 +571,10 @@
             return;
         }
 
-        if (purchaseConfirmed || cartConfirmationVisible()) {
+        if (
+            purchaseConfirmed ||
+            cartConfirmationVisible()
+        ) {
             purchaseConfirmed = true;
 
             setStatus(
@@ -476,7 +584,8 @@
             return;
         }
 
-        const result = findSafeAddToCart();
+        const result =
+            findSafeAddToCart();
 
         if (result.count > 1) {
             setStatus(
@@ -503,15 +612,22 @@
         }
 
         if (TEST_MODE) {
-            highlightButton(result.button, product);
+            highlightVerifiedButton(
+                result.button,
+                product
+            );
             return;
         }
 
         if (
-            clickAttempts < MAX_CLICK_ATTEMPTS &&
+            clickAttempts <
+                MAX_CLICK_ATTEMPTS &&
             !waitingForConfirmation
         ) {
-            clickVerifiedButton(result.button, product);
+            clickVerifiedButton(
+                result.button,
+                product
+            );
         }
     }
 
@@ -522,14 +638,8 @@
     createStatusBox();
     checkTarget();
 
-    setInterval(checkTarget, CHECK_INTERVAL);
-
-    const observer = new MutationObserver(() => {
-        checkTarget();
-    });
-
-    observer.observe(document.documentElement, {
-        childList: true,
-        subtree: true
-    });
+    window.setInterval(
+        checkTarget,
+        CHECK_INTERVAL
+    );
 })();
