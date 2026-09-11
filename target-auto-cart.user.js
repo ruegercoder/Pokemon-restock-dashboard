@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Target Add to Cart Locator - SAFE TEST
+// @name         Target Shipping + Add to Cart - SAFE TEST
 // @namespace    pokemon-restock-dashboard
-// @version      1.0.1-test
-// @description  Locates Target's main Add to Cart button without clicking it
+// @version      1.1.0-test
+// @description  Selects Shipping and highlights the main Add to Cart button without adding anything
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -19,18 +19,11 @@
     ];
 
     const CHECK_INTERVAL = 1500;
-
-    const BLOCKED_SECTION_WORDS = [
-        "recommended",
-        "similar items",
-        "you might also like",
-        "frequently bought",
-        "more to consider",
-        "sponsored",
-        "carousel"
-    ];
+    const SHIPPING_WAIT = 2500;
 
     let statusBox = null;
+    let shippingRequested = false;
+    let shippingRequestedAt = 0;
     let highlightedButton = null;
 
     function normalizeText(value) {
@@ -41,17 +34,17 @@
     }
 
     function createStatusBox() {
-        const existingBox = document.getElementById(
-            "target-button-test-status"
+        const existing = document.getElementById(
+            "target-shipping-test-status"
         );
 
-        if (existingBox) {
-            statusBox = existingBox;
+        if (existing) {
+            statusBox = existing;
             return;
         }
 
         statusBox = document.createElement("div");
-        statusBox.id = "target-button-test-status";
+        statusBox.id = "target-shipping-test-status";
 
         statusBox.style.cssText = `
             position: fixed;
@@ -91,10 +84,29 @@
         }
     }
 
+    function isVisible(element) {
+        if (!element) return false;
+
+        const style =
+            window.getComputedStyle(element);
+
+        const rect =
+            element.getBoundingClientRect();
+
+        return (
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            Number(style.opacity) !== 0 &&
+            rect.width > 0 &&
+            rect.height > 0
+        );
+    }
+
     function isCorrectTestProduct() {
-        const urlMatches = window.location.href
-            .toUpperCase()
-            .includes(TEST_PRODUCT_ID);
+        const urlMatches =
+            window.location.href
+                .toUpperCase()
+                .includes(TEST_PRODUCT_ID);
 
         const title = normalizeText(
             document.querySelector("h1")?.innerText
@@ -108,141 +120,207 @@
         return urlMatches && titleMatches;
     }
 
-    function isVisible(button) {
-        if (!button || button.disabled) {
-            return false;
-        }
-
-        const style =
-            window.getComputedStyle(button);
-
-        const rect =
-            button.getBoundingClientRect();
-
-        return (
-            style.display !== "none" &&
-            style.visibility !== "hidden" &&
-            Number(style.opacity) !== 0 &&
-            rect.width > 0 &&
-            rect.height > 0
+    function findShippingSelector() {
+        const candidates = Array.from(
+            document.querySelectorAll(
+                'button, [role="button"], [role="radio"], input[type="radio"]'
+            )
         );
+
+        return candidates.find(element => {
+            if (!isVisible(element)) return false;
+
+            const text = normalizeText(`
+                ${element.innerText || ""}
+                ${element.textContent || ""}
+                ${element.getAttribute("aria-label") || ""}
+            `);
+
+            return (
+                text === "shipping" ||
+                text.startsWith("shipping arrives") ||
+                text.startsWith("shipping available") ||
+                text.startsWith("shipping get it")
+            );
+        }) || null;
     }
 
-    function isInsideBlockedSection(button) {
-        let element = button;
+    function shippingLooksSelected(element) {
+        if (!element) return false;
+
+        let current = element;
 
         for (
             let level = 0;
-            level < 7 && element;
+            level < 4 && current;
             level++
         ) {
-            const className =
-                typeof element.className === "string"
-                    ? element.className
-                    : "";
+            const ariaChecked =
+                current.getAttribute?.("aria-checked");
 
-            const identifyingText = normalizeText(`
-                ${element.getAttribute?.("aria-label") || ""}
-                ${element.getAttribute?.("data-test") || ""}
-                ${element.getAttribute?.("data-testid") || ""}
-                ${className}
-            `);
+            const ariaSelected =
+                current.getAttribute?.("aria-selected");
 
-            const blocked =
-                BLOCKED_SECTION_WORDS.some(word =>
-                    identifyingText.includes(word)
+            const dataState =
+                normalizeText(
+                    current.getAttribute?.("data-state")
                 );
 
-            if (blocked) {
+            if (
+                ariaChecked === "true" ||
+                ariaSelected === "true" ||
+                dataState === "checked" ||
+                dataState === "selected" ||
+                dataState === "active"
+            ) {
                 return true;
             }
 
-            element = element.parentElement;
+            current = current.parentElement;
         }
 
         return false;
     }
 
+    function selectShipping() {
+        const shippingSelector =
+            findShippingSelector();
+
+        if (!shippingSelector) {
+            setStatus(
+                "🔍 SAFE TEST — WAITING FOR SHIPPING OPTION",
+                "#815500"
+            );
+
+            return false;
+        }
+
+        if (shippingLooksSelected(shippingSelector)) {
+            return true;
+        }
+
+        if (!shippingRequested) {
+            shippingRequested = true;
+            shippingRequestedAt = Date.now();
+
+            setStatus(
+                "📦 SAFE TEST — SELECTING SHIPPING",
+                "#174a7e"
+            );
+
+            shippingSelector.click();
+            return false;
+        }
+
+        if (
+            Date.now() - shippingRequestedAt <
+            SHIPPING_WAIT
+        ) {
+            setStatus(
+                "📦 SAFE TEST — WAITING FOR SHIPPING",
+                "#174a7e"
+            );
+
+            return false;
+        }
+
+        /*
+         * Some Target fulfillment cards do not expose their
+         * selected state to the page. After clicking Shipping
+         * and allowing the page to update, continue to the
+         * button-location test.
+         */
+        return true;
+    }
+
     function getRecommendationBoundary() {
+        const blockedHeadings = [
+            "recommended",
+            "similar items",
+            "you might also like",
+            "frequently bought",
+            "more to consider"
+        ];
+
         const headings = Array.from(
             document.querySelectorAll("h2, h3")
         );
 
-        const recommendationHeading =
-            headings.find(heading => {
-                const headingText =
-                    normalizeText(heading.innerText);
+        const heading = headings.find(element => {
+            const text =
+                normalizeText(element.innerText);
 
-                return BLOCKED_SECTION_WORDS.some(word =>
-                    headingText.includes(word)
-                );
-            });
+            return blockedHeadings.some(word =>
+                text.includes(word)
+            );
+        });
 
-        if (!recommendationHeading) {
-            return Infinity;
-        }
+        if (!heading) return Infinity;
 
         return (
-            recommendationHeading
-                .getBoundingClientRect()
-                .top +
+            heading.getBoundingClientRect().top +
             window.scrollY
         );
     }
 
-    function getButtonText(button) {
-        return normalizeText(
-            button.innerText ||
-            button.textContent ||
-            button.getAttribute("aria-label")
-        );
-    }
-
-    function hasAddToCartText(button) {
-        const buttonText =
-            getButtonText(button);
-
-        return (
-            buttonText === "add to cart" ||
-            buttonText === "ship it - add to cart" ||
-            buttonText.startsWith("add to cart for ")
-        );
-    }
-
-    function findSafeAddToCartButtons() {
-        const recommendationBoundary =
+    function findAddToCartButtons() {
+        const boundary =
             getRecommendationBoundary();
 
-        const buttons = Array.from(
+        return Array.from(
             document.querySelectorAll("button")
-        );
+        ).filter(button => {
+            if (!isVisible(button)) return false;
+            if (button.disabled) return false;
 
-        return buttons.filter(button => {
-            if (!hasAddToCartText(button)) {
-                return false;
-            }
+            const text = normalizeText(
+                button.innerText ||
+                button.textContent ||
+                button.getAttribute("aria-label")
+            );
 
-            if (!isVisible(button)) {
-                return false;
-            }
+            const textMatches =
+                text === "add to cart" ||
+                text === "ship it - add to cart" ||
+                text.startsWith("add to cart for ");
 
-            if (isInsideBlockedSection(button)) {
-                return false;
-            }
+            if (!textMatches) return false;
 
-            const buttonPosition =
+            const position =
                 button.getBoundingClientRect().top +
                 window.scrollY;
 
-            if (
-                buttonPosition >
-                recommendationBoundary
-            ) {
-                return false;
-            }
-
-            return true;
+            return position < boundary;
         });
+    }
+
+    function chooseMainButton(buttons) {
+        if (buttons.length === 0) {
+            return null;
+        }
+
+        /*
+         * Target may create a duplicate mobile/sticky button.
+         * The main fulfillment button is normally the largest
+         * eligible button.
+         */
+        return buttons
+            .slice()
+            .sort((first, second) => {
+                const firstRect =
+                    first.getBoundingClientRect();
+
+                const secondRect =
+                    second.getBoundingClientRect();
+
+                const firstArea =
+                    firstRect.width * firstRect.height;
+
+                const secondArea =
+                    secondRect.width * secondRect.height;
+
+                return secondArea - firstArea;
+            })[0];
     }
 
     function highlightButton(button) {
@@ -278,29 +356,28 @@
             return;
         }
 
-        const buttons =
-            findSafeAddToCartButtons();
+        if (!selectShipping()) {
+            return;
+        }
 
-        if (buttons.length === 0) {
+        const buttons =
+            findAddToCartButtons();
+
+        const mainButton =
+            chooseMainButton(buttons);
+
+        if (!mainButton) {
             setStatus(
-                "🔍 SAFE TEST — NO MAIN BUTTON FOUND",
+                "🔍 SAFE TEST — SHIPPING SELECTED — NO BUTTON FOUND",
                 "#815500"
             );
             return;
         }
 
-        if (buttons.length > 1) {
-            setStatus(
-                `🔒 SAFE TEST — ${buttons.length} BUTTONS FOUND — NOTHING CLICKED`,
-                "#7a0014"
-            );
-            return;
-        }
-
-        highlightButton(buttons[0]);
+        highlightButton(mainButton);
 
         setStatus(
-            "✅ SAFE TEST PASSED — BUTTON HIGHLIGHTED — NOTHING CLICKED",
+            `✅ SHIPPING SELECTED — MAIN BUTTON HIGHLIGHTED — ${buttons.length} PAGE BUTTONS FOUND — NOTHING CLICKED`,
             "#006b36"
         );
     }
