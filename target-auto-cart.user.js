@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Target Pokemon Auto Add - Multi Product
+// @name         Target Add to Cart Locator - SAFE TEST
 // @namespace    pokemon-restock-dashboard
-// @version      2.9.1
-// @description  Safely verifies approved Pokemon products and targets the correct Target Add to Cart button
+// @version      1.0.1-test
+// @description  Locates Target's main Add to Cart button without clicking it
 // @match        https://www.target.com/p/*
 // @grant        none
 // @run-at       document-idle
@@ -11,124 +11,58 @@
 (function () {
     "use strict";
 
-    // ============================================================
-    // SETTINGS
-    // ============================================================
+    const TEST_PRODUCT_ID = "A-53274278";
 
-    // true  = safely highlights the button without clicking
-    // false = automatically clicks the verified button
-    const TEST_MODE = false;
+    const REQUIRED_TITLE_WORDS = [
+        "bounty",
+        "paper towels"
+    ];
 
     const CHECK_INTERVAL = 1500;
-    const MAX_CLICK_ATTEMPTS = 3;
-    const RETRY_DELAY = 4000;
 
-    // ============================================================
-    // APPROVED PRODUCTS
-    // ============================================================
-
-    const PRODUCTS = {
-        "A-1010892076": {
-            name: "Elite Trainer Box",
-            requiredWords: [
-                "30th",
-                "celebration",
-                "elite trainer box"
-            ]
-        },
-
-        "A-1010892070": {
-            name: "Knock Out Collection",
-            requiredWords: [
-                "30th",
-                "celebration",
-                "knock out"
-            ]
-        },
-
-        "A-1010892078": {
-            name: "Tech Sticker Collection",
-            requiredWords: [
-                "30th",
-                "celebration",
-                "tech sticker"
-            ]
-        },
-
-        "A-1010892065": {
-            name: "Greninja ex Box",
-            requiredWords: [
-                "30th",
-                "celebration",
-                "greninja"
-            ]
-        },
-
-        "A-1010892068": {
-            name: "Sylveon ex Box",
-            requiredWords: [
-                "30th",
-                "celebration",
-                "sylveon"
-            ]
-        },
-
-        "A-1010892067": {
-            name: "Poster Collection",
-            requiredWords: [
-                "30th",
-                "celebration",
-                "poster"
-            ]
-        },
-
-        "A-1010892069": {
-            name: "Celebration Tin",
-            requiredWords: [
-                "30th",
-                "celebration",
-                "tin"
-            ]
-        }
-    };
-
-    // ============================================================
-    // STATE
-    // ============================================================
+    const BLOCKED_SECTION_WORDS = [
+        "recommended",
+        "similar items",
+        "you might also like",
+        "frequently bought",
+        "more to consider",
+        "sponsored",
+        "carousel"
+    ];
 
     let statusBox = null;
-    let clickAttempts = 0;
-    let waitingForConfirmation = false;
-    let purchaseConfirmed = false;
     let highlightedButton = null;
-    let lastUrl = window.location.href;
 
-    // ============================================================
-    // STATUS BANNER
-    // ============================================================
+    function normalizeText(value) {
+        return String(value || "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLowerCase();
+    }
 
     function createStatusBox() {
-        const existingBox =
-            document.getElementById("pokemon-target-status");
+        const existingBox = document.getElementById(
+            "target-button-test-status"
+        );
 
         if (existingBox) {
             statusBox = existingBox;
             return;
         }
 
-        const box = document.createElement("div");
-        box.id = "pokemon-target-status";
+        statusBox = document.createElement("div");
+        statusBox.id = "target-button-test-status";
 
-        box.style.cssText = `
+        statusBox.style.cssText = `
             position: fixed;
             top: 15px;
             left: 50%;
             transform: translateX(-50%);
             z-index: 2147483647;
-            background: #111;
+            background: #174a7e;
             color: #fff;
             padding: 12px 18px;
-            border: 2px solid #555;
+            border: 2px solid #fff;
             border-radius: 14px;
             font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
             font-size: 14px;
@@ -139,18 +73,15 @@
             box-shadow: 0 4px 14px rgba(0,0,0,.4);
         `;
 
-        box.textContent = "🔍 Checking Target product...";
+        statusBox.textContent =
+            "🔍 SAFE TEST — CHECKING PRODUCT";
 
-        document.body.appendChild(box);
-        statusBox = box;
+        document.body.appendChild(statusBox);
     }
 
-    function setStatus(message, color = "#111") {
-        if (!statusBox) {
-            createStatusBox();
-        }
+    function setStatus(message, color) {
+        createStatusBox();
 
-        // Avoid unnecessary page changes.
         if (statusBox.textContent !== message) {
             statusBox.textContent = message;
         }
@@ -160,74 +91,33 @@
         }
     }
 
-    // ============================================================
-    // TEXT HELPERS
-    // ============================================================
+    function isCorrectTestProduct() {
+        const urlMatches = window.location.href
+            .toUpperCase()
+            .includes(TEST_PRODUCT_ID);
 
-    function normalizeText(value) {
-        return String(value || "")
-            .replace(/\s+/g, " ")
-            .trim()
-            .toLowerCase();
-    }
-
-    // ============================================================
-    // PRODUCT VERIFICATION
-    // ============================================================
-
-    function getCurrentProduct() {
-        const match =
-            window.location.href.match(/A-\d+/i);
-
-        if (!match) {
-            return null;
-        }
-
-        const productId = match[0].toUpperCase();
-        const product = PRODUCTS[productId];
-
-        if (!product) {
-            return null;
-        }
-
-        return {
-            id: productId,
-            ...product
-        };
-    }
-
-    function getProductTitle() {
-        const heading = document.querySelector("h1");
-
-        return {
-            element: heading,
-            text: normalizeText(heading?.innerText)
-        };
-    }
-
-    function titleMatchesProduct(product) {
-        const title = getProductTitle().text;
-
-        if (!title) {
-            return false;
-        }
-
-        return product.requiredWords.every(requiredWord =>
-            title.includes(normalizeText(requiredWord))
+        const title = normalizeText(
+            document.querySelector("h1")?.innerText
         );
+
+        const titleMatches =
+            REQUIRED_TITLE_WORDS.every(word =>
+                title.includes(word)
+            );
+
+        return urlMatches && titleMatches;
     }
 
-    // ============================================================
-    // BUTTON SAFETY
-    // ============================================================
-
-    function isVisible(element) {
-        if (!element || element.disabled) {
+    function isVisible(button) {
+        if (!button || button.disabled) {
             return false;
         }
 
-        const style = window.getComputedStyle(element);
-        const rect = element.getBoundingClientRect();
+        const style =
+            window.getComputedStyle(button);
+
+        const rect =
+            button.getBoundingClientRect();
 
         return (
             style.display !== "none" &&
@@ -238,17 +128,7 @@
         );
     }
 
-    function isRecommendationButton(button) {
-        const blockedWords = [
-            "recommended",
-            "similar items",
-            "you might also like",
-            "frequently bought",
-            "more to consider",
-            "sponsored",
-            "carousel"
-        ];
-
+    function isInsideBlockedSection(button) {
         let element = button;
 
         for (
@@ -256,20 +136,24 @@
             level < 7 && element;
             level++
         ) {
+            const className =
+                typeof element.className === "string"
+                    ? element.className
+                    : "";
+
             const identifyingText = normalizeText(`
                 ${element.getAttribute?.("aria-label") || ""}
                 ${element.getAttribute?.("data-test") || ""}
                 ${element.getAttribute?.("data-testid") || ""}
-                ${typeof element.className === "string"
-                    ? element.className
-                    : ""}
+                ${className}
             `);
 
-            if (
-                blockedWords.some(word =>
+            const blocked =
+                BLOCKED_SECTION_WORDS.some(word =>
                     identifyingText.includes(word)
-                )
-            ) {
+                );
+
+            if (blocked) {
                 return true;
             }
 
@@ -286,16 +170,12 @@
 
         const recommendationHeading =
             headings.find(heading => {
-                const text =
+                const headingText =
                     normalizeText(heading.innerText);
 
-                return [
-                    "recommended",
-                    "similar items",
-                    "you might also like",
-                    "frequently bought",
-                    "more to consider"
-                ].some(word => text.includes(word));
+                return BLOCKED_SECTION_WORDS.some(word =>
+                    headingText.includes(word)
+                );
             });
 
         if (!recommendationHeading) {
@@ -310,7 +190,26 @@
         );
     }
 
-    function findSafeAddToCart() {
+    function getButtonText(button) {
+        return normalizeText(
+            button.innerText ||
+            button.textContent ||
+            button.getAttribute("aria-label")
+        );
+    }
+
+    function hasAddToCartText(button) {
+        const buttonText =
+            getButtonText(button);
+
+        return (
+            buttonText === "add to cart" ||
+            buttonText === "ship it - add to cart" ||
+            buttonText.startsWith("add to cart for ")
+        );
+    }
+
+    function findSafeAddToCartButtons() {
         const recommendationBoundary =
             getRecommendationBoundary();
 
@@ -318,21 +217,8 @@
             document.querySelectorAll("button")
         );
 
-        const matches = buttons.filter(button => {
-            const buttonText = normalizeText(
-                button.innerText ||
-                button.textContent ||
-                button.getAttribute("aria-label")
-            );
-
-            const exactButtonText =
-                buttonText === "add to cart" ||
-                buttonText === "ship it - add to cart" ||
-                buttonText.startsWith(
-                    "add to cart for "
-                );
-
-            if (!exactButtonText) {
+        return buttons.filter(button => {
+            if (!hasAddToCartText(button)) {
                 return false;
             }
 
@@ -340,7 +226,7 @@
                 return false;
             }
 
-            if (isRecommendationButton(button)) {
+            if (isInsideBlockedSection(button)) {
                 return false;
             }
 
@@ -357,289 +243,73 @@
 
             return true;
         });
-
-        return {
-            button:
-                matches.length === 1
-                    ? matches[0]
-                    : null,
-            count: matches.length
-        };
     }
 
-    // ============================================================
-    // AVAILABILITY
-    // ============================================================
-
-    function getPrimaryPageText() {
-        const main =
-            document.querySelector("main");
-
-        if (!main) {
-            return "";
+    function highlightButton(button) {
+        if (highlightedButton === button) {
+            return;
         }
 
-        let text =
-            normalizeText(main.innerText);
-
-        const cutoffWords = [
-            "recommended",
-            "similar items",
-            "you might also like",
-            "frequently bought",
-            "more to consider"
-        ];
-
-        let cutoffPosition = text.length;
-
-        for (const cutoffWord of cutoffWords) {
-            const position =
-                text.indexOf(cutoffWord);
-
-            if (
-                position !== -1 &&
-                position < cutoffPosition
-            ) {
-                cutoffPosition = position;
-            }
+        if (highlightedButton) {
+            highlightedButton.style.outline = "";
+            highlightedButton.style.boxShadow = "";
         }
 
-        return text.slice(0, cutoffPosition);
+        highlightedButton = button;
+
+        button.style.outline =
+            "6px solid #00e676";
+
+        button.style.boxShadow =
+            "0 0 0 10px rgba(0,230,118,.4)";
+
+        button.scrollIntoView({
+            behavior: "smooth",
+            block: "center"
+        });
     }
 
-    function pageShowsSoldOut() {
-        const text = getPrimaryPageText();
-
-        return [
-            "out of stock",
-            "sold out",
-            "temporarily out of stock"
-        ].some(message => text.includes(message));
-    }
-
-    // ============================================================
-    // CART CONFIRMATION
-    // ============================================================
-
-    function cartConfirmationVisible() {
-        const visibleText =
-            normalizeText(
-                document.body.innerText
+    function runTest() {
+        if (!isCorrectTestProduct()) {
+            setStatus(
+                "🔒 SAFE TEST — WRONG PRODUCT",
+                "#7a0014"
             );
-
-        return [
-            "added to cart",
-            "added to your cart",
-            "view cart",
-            "go to cart"
-        ].some(message =>
-            visibleText.includes(message)
-        );
-    }
-
-    // ============================================================
-    // SAFE TEST MODE
-    // ============================================================
-
-    function highlightVerifiedButton(
-        button,
-        product
-    ) {
-        if (highlightedButton !== button) {
-            if (highlightedButton) {
-                highlightedButton.style.outline = "";
-                highlightedButton.style.boxShadow = "";
-            }
-
-            highlightedButton = button;
-
-            button.style.outline =
-                "6px solid #00e676";
-
-            button.style.boxShadow =
-                "0 0 0 10px rgba(0,230,118,.35)";
-
-            button.scrollIntoView({
-                behavior: "smooth",
-                block: "center"
-            });
+            return;
         }
+
+        const buttons =
+            findSafeAddToCartButtons();
+
+        if (buttons.length === 0) {
+            setStatus(
+                "🔍 SAFE TEST — NO MAIN BUTTON FOUND",
+                "#815500"
+            );
+            return;
+        }
+
+        if (buttons.length > 1) {
+            setStatus(
+                `🔒 SAFE TEST — ${buttons.length} BUTTONS FOUND — NOTHING CLICKED`,
+                "#7a0014"
+            );
+            return;
+        }
+
+        highlightButton(buttons[0]);
 
         setStatus(
-            `🧪 TEST PASSED — ${product.name} BUTTON VERIFIED — NOT CLICKED`,
+            "✅ SAFE TEST PASSED — BUTTON HIGHLIGHTED — NOTHING CLICKED",
             "#006b36"
         );
     }
-
-    // ============================================================
-    // LIVE AUTO-ADD
-    // ============================================================
-
-    function clickVerifiedButton(
-        button,
-        product
-    ) {
-        if (
-            waitingForConfirmation ||
-            purchaseConfirmed
-        ) {
-            return;
-        }
-
-        clickAttempts++;
-        waitingForConfirmation = true;
-
-        setStatus(
-            `🟢 ${product.name} — ADDING TO CART — ATTEMPT ${clickAttempts}/${MAX_CLICK_ATTEMPTS}`,
-            "#006b36"
-        );
-
-        console.log(
-            "[Pokemon Auto Add]",
-            "Clicking verified button:",
-            product.name,
-            product.id,
-            `attempt ${clickAttempts}`
-        );
-
-        button.click();
-
-        window.setTimeout(() => {
-            if (cartConfirmationVisible()) {
-                purchaseConfirmed = true;
-                waitingForConfirmation = false;
-
-                setStatus(
-                    `✅ ${product.name} — CONFIRMED IN CART — CHECK OUT NOW`,
-                    "#006b36"
-                );
-
-                return;
-            }
-
-            waitingForConfirmation = false;
-
-            if (
-                clickAttempts >=
-                MAX_CLICK_ATTEMPTS
-            ) {
-                setStatus(
-                    `⚠️ ${product.name} — CART NOT CONFIRMED — TAP MANUALLY`,
-                    "#9a5b00"
-                );
-            } else {
-                setStatus(
-                    `🔄 ${product.name} — CART NOT CONFIRMED — RETRYING`,
-                    "#815500"
-                );
-            }
-        }, RETRY_DELAY);
-    }
-
-    // ============================================================
-    // MAIN CHECK
-    // ============================================================
-
-    function checkTarget() {
-        if (
-            window.location.href !==
-            lastUrl
-        ) {
-            lastUrl = window.location.href;
-            clickAttempts = 0;
-            waitingForConfirmation = false;
-            purchaseConfirmed = false;
-            highlightedButton = null;
-        }
-
-        const product =
-            getCurrentProduct();
-
-        if (!product) {
-            setStatus(
-                "🔒 NOT AN APPROVED POKÉMON PRODUCT",
-                "#7a0014"
-            );
-            return;
-        }
-
-        if (!titleMatchesProduct(product)) {
-            setStatus(
-                `🔒 ${product.name} — TITLE VERIFICATION FAILED`,
-                "#7a0014"
-            );
-            return;
-        }
-
-        if (
-            purchaseConfirmed ||
-            cartConfirmationVisible()
-        ) {
-            purchaseConfirmed = true;
-
-            setStatus(
-                `✅ ${product.name} — CONFIRMED IN CART — CHECK OUT NOW`,
-                "#006b36"
-            );
-            return;
-        }
-
-        const result =
-            findSafeAddToCart();
-
-        if (result.count > 1) {
-            setStatus(
-                `🔒 ${product.name} — MULTIPLE BUTTONS FOUND — REFUSING TO CLICK`,
-                "#7a0014"
-            );
-            return;
-        }
-
-        if (!result.button) {
-            if (pageShowsSoldOut()) {
-                setStatus(
-                    `🟡 ${product.name} — SOLD OUT — WATCHING`,
-                    "#815500"
-                );
-            } else {
-                setStatus(
-                    `🔍 ${product.name} — WATCHING FOR ADD TO CART`,
-                    "#174a7e"
-                );
-            }
-
-            return;
-        }
-
-        if (TEST_MODE) {
-            highlightVerifiedButton(
-                result.button,
-                product
-            );
-            return;
-        }
-
-        if (
-            clickAttempts <
-                MAX_CLICK_ATTEMPTS &&
-            !waitingForConfirmation
-        ) {
-            clickVerifiedButton(
-                result.button,
-                product
-            );
-        }
-    }
-
-    // ============================================================
-    // START
-    // ============================================================
 
     createStatusBox();
-    checkTarget();
+    runTest();
 
     window.setInterval(
-        checkTarget,
+        runTest,
         CHECK_INTERVAL
     );
 })();
