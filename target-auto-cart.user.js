@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Target Pokemon Auto Add - Multi Product
 // @namespace    pokemon-restock-dashboard
-// @version      2.9.1-test
+// @version      2.9.1
 // @description  Safely verifies approved Pokemon products and targets the correct Target Add to Cart button
 // @match        https://www.target.com/p/*
 // @grant        none
@@ -17,7 +17,7 @@
 
     // true  = safely highlights the button without clicking
     // false = automatically clicks the verified button
-    const TEST_MODE = true;
+    const TEST_MODE = false;
 
     const CHECK_INTERVAL = 1500;
     const MAX_CLICK_ATTEMPTS = 3;
